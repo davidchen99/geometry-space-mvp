@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>几何空间 - 数学题文字转图形理解工具</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="input-panel" aria-label="题目输入区">
+        <header class="brand">
+          <div class="brand-mark">几</div>
+          <div>
+            <h1>几何空间</h1>
+            <p>数学题文字转图形理解工具</p>
+          </div>
+        </header>
+
+        <section class="problem-card">
+          <div class="section-title">
+            <span>题目</span>
+            <button class="icon-button ghost" id="clearBtn" type="button" aria-label="清空题目">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+          <textarea
+            id="problemInput"
+            spellcheck="false"
+            placeholder="粘贴几何题目，例如：正方体ABCD-A1B1C1D1，边长为2，E是AB的中点，连接EC1"
+          ></textarea>
+          <div class="primary-actions">
+            <button class="primary-button" id="generateBtn" type="button">
+              <i data-lucide="wand-sparkles"></i>
+              生成图形
+            </button>
+            <button class="secondary-button" id="selectAllBtn" type="button">
+              全选
+            </button>
+          </div>
+        </section>
+
+        <section class="samples" aria-label="示例题目">
+          <div class="section-title">
+            <span>示例</span>
+          </div>
+          <div class="sample-list" id="sampleList"></div>
+        </section>
+
+        <section class="parse-panel" aria-label="解析结果">
+          <div class="section-title">
+            <span>解析</span>
+            <span class="parse-badge" id="parseBadge">规则解析</span>
+          </div>
+          <h2 id="modelTitle">等待生成</h2>
+          <p id="modelSummary">选择示例或粘贴题目后生成图形。</p>
+          <div class="relation-list" id="relationList"></div>
+        </section>
+      </aside>
+
+      <main class="viewer-shell">
+        <div class="viewer-toolbar" aria-label="模型操作">
+          <button class="tool-button" id="resetViewBtn" type="button" aria-label="重置视角" title="重置视角">
+            <i data-lucide="rotate-ccw"></i>
+          </button>
+          <button class="tool-button active" id="gridBtn" type="button" aria-label="坐标网格" title="坐标网格">
+            <i data-lucide="grid-3x3"></i>
+          </button>
+          <button class="tool-button active" id="auxBtn" type="button" aria-label="辅助线" title="辅助线">
+            <i data-lucide="scan-line"></i>
+          </button>
+          <button class="tool-button" id="measureBtn" type="button" aria-label="测距" title="测距">
+            <i data-lucide="ruler"></i>
+          </button>
+          <button class="tool-button" id="screenshotBtn" type="button" aria-label="导出图片" title="导出图片">
+            <i data-lucide="download"></i>
+          </button>
+        </div>
+
+        <div class="viewer-status" id="statusText">准备就绪</div>
+        <div class="scene-wrap" id="sceneWrap">
+          <canvas id="sceneCanvas"></canvas>
+          <div class="label-layer" id="labelLayer" aria-hidden="true"></div>
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon"><i data-lucide="box"></i></div>
+            <strong>输入题目后生成图形</strong>
+            <span>支持正方体、长方体、三棱锥、四棱锥和基础三角形。</span>
+          </div>
+        </div>
+
+        <aside class="inspect-panel" aria-label="元素信息">
+          <div>
+            <div class="section-title">
+              <span>当前元素</span>
+            </div>
+            <div class="selected-box" id="selectedBox">
+              <strong>未选择</strong>
+              <span>点击模型中的点、线或面。</span>
+            </div>
+          </div>
+
+          <div>
+            <div class="section-title">
+              <span>元素</span>
+            </div>
+            <div class="element-list" id="elementList"></div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script>
+      window.addEventListener("error", (event) => {
+        const status = document.querySelector("#statusText");
+        if (status) status.textContent = `脚本错误：${event.message}`;
+      });
+      window.addEventListener("unhandledrejection", (event) => {
+        const status = document.querySelector("#statusText");
+        const reason = event.reason?.message || String(event.reason);
+        if (status) status.textContent = `脚本错误：${reason}`;
+      });
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
