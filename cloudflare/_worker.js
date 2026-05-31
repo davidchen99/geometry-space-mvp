@@ -4,6 +4,8 @@ JSON 格式包含 type、title、description、points、segments、faces、relat
 kind 只能是 edge、connection、aux。
 题目：{{problem}}`;
 
+const DEFAULT_ADMIN_PASSWORD = "123456";
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -36,6 +38,9 @@ async function handleApi(request, env, pathname) {
   if (pathname.startsWith("/api/admin/")) {
     const admin = await requireAdmin(request, env);
     if (!admin) return json({ ok: false, error: "请先登录管理员账号" }, 401);
+    if (pathname !== "/api/admin/password" && pathname !== "/api/admin/logout" && !(await isAdminPasswordChanged(env))) {
+      return json({ ok: false, error: "请先修改默认管理员密码" }, 403);
+    }
   }
   if (pathname === "/api/admin/config" && request.method === "GET") return json({ ok: true, config: publicConfig(await getConfig(env)) });
   if (pathname === "/api/admin/config" && request.method === "PUT") return saveConfig(request, env);
@@ -57,10 +62,12 @@ async function registerUser(request, env) {
   if (!username) return json({ ok: false, error: "请输入用户名" }, 400);
   let user = await env.DB.prepare("SELECT * FROM users WHERE phone = ?").bind(phone).first();
   if (!user) {
+    const config = await getConfig(env);
     const inviteCode = String(body.inviteCode || "").trim().toUpperCase();
     const invite = inviteCode ? await env.DB.prepare("SELECT * FROM invites WHERE code = ?").bind(inviteCode).first() : null;
     if (inviteCode && !invite) return json({ ok: false, error: "邀请码不存在" }, 400);
     if (invite && invite.max_uses && invite.used_count >= invite.max_uses) return json({ ok: false, error: "邀请码已用完" }, 400);
+    const defaultDailyLimit = clamp(config.defaultStudentDailyLimit, 0, 100000, 20);
     user = {
       id: crypto.randomUUID(),
       username,
@@ -68,7 +75,7 @@ async function registerUser(request, env) {
       role: "student",
       invite_code: inviteCode,
       plan: invite?.plan || "trial",
-      daily_ai_limit: invite?.daily_ai_limit || 20,
+      daily_ai_limit: invite ? clamp(invite.daily_ai_limit, 0, 100000, defaultDailyLimit) : defaultDailyLimit,
       monthly_token_limit: invite?.monthly_token_limit || 100000,
       created_at: new Date().toISOString(),
     };
@@ -105,11 +112,11 @@ async function currentUser(request, env) {
 async function adminLogin(request, env) {
   const body = await readBody(request);
   const password = String(body.password || "");
-  const adminPassword = (await getSetting(env, "adminPassword")) || env.ADMIN_PASSWORD || "123456";
+  const adminPassword = await getAdminPassword(env);
   if (body.username !== "admin" || password !== adminPassword) return json({ ok: false, error: "账号或密码不正确" }, 401);
   const admin = await env.DB.prepare("SELECT * FROM users WHERE role = 'admin' LIMIT 1").first();
   const token = await createSession(env, admin.id, "admin");
-  return json({ ok: true, token, config: publicConfig(await getConfig(env)), stats: await buildStats(env) });
+  return json({ ok: true, token, passwordChangeRequired: !(await isAdminPasswordChanged(env)), config: publicConfig(await getConfig(env)), stats: await buildStats(env) });
 }
 
 async function recordUsage(request, env) {
@@ -123,26 +130,32 @@ async function parseWithAi(request, env) {
   const body = await readBody(request);
   const text = String(body.text || "").trim();
   if (!text) return json({ ok: false, error: "题目不能为空" }, 400);
-  const config = await getConfig(env);
-  if (!config.aiEnabled || !config.apiKey) return json({ ok: false, error: "管理员还没有配置 AI Key" }, 400);
-  const data = await callDeepSeek(config, config.promptTemplate.replaceAll("{{problem}}", text), 0.1);
-  const model = normalizeAiModel(JSON.parse(stripJsonFence(data.choices?.[0]?.message?.content || "{}")));
-  const session = await getSession(request, env);
-  await writeUsage(env, session?.user_id || null, "ai", "parse", true, text, model.title, data.usage);
-  return json({ ok: true, model, usage: data.usage || null });
+  const access = await requireAiAccess(request, env);
+  if (!access.ok) return json({ ok: false, error: access.error }, access.status);
+  try {
+    const data = await callDeepSeek(access.config, access.config.promptTemplate.replaceAll("{{problem}}", text), 0.1);
+    const model = normalizeAiModel(JSON.parse(stripJsonFence(data.choices?.[0]?.message?.content || "{}")));
+    await writeUsage(env, access.user.id, "ai", "parse", true, text, model.title, data.usage);
+    return json({ ok: true, model, usage: data.usage || null });
+  } catch (error) {
+    await writeUsage(env, access.user.id, "ai", "parse", false, text, error.message || "AI 解析失败");
+    return json({ ok: false, error: error.message || "AI 解析失败" }, 502);
+  }
 }
 
 async function tips(request, env) {
   const body = await readBody(request);
   const text = String(body.text || "").trim();
   const fallback = buildLocalTips(text);
-  const config = await getConfig(env);
-  if (!config.aiEnabled || !config.apiKey) return json({ ok: true, source: "local", tips: fallback });
+  const access = await requireAiAccess(request, env);
+  if (!access.ok) return json({ ok: true, source: "local", tips: fallback, warning: access.error });
   try {
-    const data = await callDeepSeek(config, buildTipsPrompt(text), 0.2);
+    const data = await callDeepSeek(access.config, buildTipsPrompt(text), 0.2);
     const content = JSON.parse(stripJsonFence(data.choices?.[0]?.message?.content || "{}"));
+    await writeUsage(env, access.user.id, "ai", "tips", true, text || "空题目", "输入 Tips", data.usage);
     return json({ ok: true, source: "ai", tips: normalizeTips(content) });
   } catch (error) {
+    await writeUsage(env, access.user.id, "ai", "tips", false, text || "空题目", error.message || "Tips 生成失败");
     return json({ ok: true, source: "local", tips: fallback, warning: error.message });
   }
 }
@@ -151,12 +164,14 @@ async function coach(request, env) {
   const body = await readBody(request);
   const mode = body.mode === "ask" ? "ask" : "steps";
   const fallback = buildLocalCoach(mode, body.text || "", body.question || "", body.model || null);
-  const config = await getConfig(env);
-  if (!config.aiEnabled || !config.apiKey) return json({ ok: true, source: "local", ...fallback });
+  const access = await requireAiAccess(request, env);
+  if (!access.ok) return json({ ok: true, source: "local", ...fallback, warning: access.error });
   try {
-    const data = await callDeepSeek(config, buildCoachPrompt(mode, body.text || "", body.question || "", body.model || null), 0.2);
+    const data = await callDeepSeek(access.config, buildCoachPrompt(mode, body.text || "", body.question || "", body.model || null), 0.2);
+    await writeUsage(env, access.user.id, "ai", `coach-${mode}`, true, body.text || body.question || "空请求", mode === "ask" ? "问答" : "步骤", data.usage);
     return json({ ok: true, source: "ai", ...normalizeCoach(JSON.parse(stripJsonFence(data.choices?.[0]?.message?.content || "{}")), fallback) });
   } catch (error) {
+    await writeUsage(env, access.user.id, "ai", `coach-${mode}`, false, body.text || body.question || "空请求", error.message || "辅导失败");
     return json({ ok: true, source: "local", ...fallback, warning: error.message });
   }
 }
@@ -169,6 +184,7 @@ async function saveConfig(request, env) {
     model: String(body.model || config.model).trim(),
     aiEnabled: Boolean(body.aiEnabled),
     dailyLimit: Number(body.dailyLimit || config.dailyLimit || 200),
+    defaultStudentDailyLimit: clamp(body.defaultStudentDailyLimit, 0, 100000, config.defaultStudentDailyLimit || 20),
     promptTemplate: String(body.promptTemplate || config.promptTemplate || defaultPrompt),
   };
   if (body.apiKey) next.apiKey = String(body.apiKey).trim();
@@ -180,11 +196,13 @@ async function saveConfig(request, env) {
 
 async function changeAdminPassword(request, env) {
   const body = await readBody(request);
-  const current = (await getSetting(env, "adminPassword")) || env.ADMIN_PASSWORD || "123456";
+  const current = await getAdminPassword(env);
   if (String(body.oldPassword || "") !== current) return json({ ok: false, error: "旧密码不正确" }, 400);
   const next = String(body.newPassword || "");
   if (next.length < 6) return json({ ok: false, error: "新密码至少 6 位" }, 400);
+  if (next === DEFAULT_ADMIN_PASSWORD) return json({ ok: false, error: "新密码不能继续使用默认密码" }, 400);
   await setSetting(env, "adminPassword", next);
+  await setSetting(env, "adminPasswordChanged", "true");
   return json({ ok: true });
 }
 
@@ -230,7 +248,7 @@ async function listUsers(env) {
 }
 
 async function buildStats(env) {
-  const total = await env.DB.prepare("SELECT COUNT(*) AS count FROM usage_events").first();
+  const total = await env.DB.prepare("SELECT COUNT(*) AS count FROM usage_events WHERE feature IN ('generate', 'parse')").first();
   const ai = await env.DB.prepare("SELECT COUNT(*) AS count FROM usage_events WHERE source = 'ai'").first();
   const users = await env.DB.prepare("SELECT COUNT(*) AS count FROM users WHERE role != 'admin'").first();
   const { results } = await env.DB.prepare("SELECT * FROM usage_events ORDER BY created_at DESC LIMIT 20").all();
@@ -245,6 +263,9 @@ async function buildStats(env) {
 }
 
 async function writeUsage(env, userId, source, feature, success, text, modelTitle, usage = {}) {
+  const generationDelta = feature === "generate" || feature === "parse" ? 1 : 0;
+  const aiDelta = source === "ai" ? 1 : 0;
+  const tokenDelta = usage?.total_tokens || 0;
   await env.DB.prepare(
     "INSERT INTO usage_events (id, user_id, feature, source, success, text, model_title, tokens_in, tokens_out, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   )
@@ -252,9 +273,9 @@ async function writeUsage(env, userId, source, feature, success, text, modelTitl
     .run();
   if (userId) {
     await env.DB.prepare(
-      "INSERT INTO daily_usage (user_id, date, generations, ai_calls, tokens) VALUES (?, ?, 1, ?, ?) ON CONFLICT(user_id, date) DO UPDATE SET generations = generations + 1, ai_calls = ai_calls + ?, tokens = tokens + ?",
+      "INSERT INTO daily_usage (user_id, date, generations, ai_calls, tokens) VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id, date) DO UPDATE SET generations = generations + ?, ai_calls = ai_calls + ?, tokens = tokens + ?",
     )
-      .bind(userId, today(), source === "ai" ? 1 : 0, usage?.total_tokens || 0, source === "ai" ? 1 : 0, usage?.total_tokens || 0)
+      .bind(userId, today(), generationDelta, aiDelta, tokenDelta, generationDelta, aiDelta, tokenDelta)
       .run();
   }
 }
@@ -267,18 +288,18 @@ async function ensureDefaults(env) {
       .run();
   }
   if (!(await getSetting(env, "config"))) {
-    await setSetting(env, "config", JSON.stringify({ endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash", promptTemplate: defaultPrompt, aiEnabled: true, dailyLimit: 200, apiKey: env.DEEPSEEK_API_KEY || "" }));
+    await setSetting(env, "config", JSON.stringify({ endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash", promptTemplate: defaultPrompt, aiEnabled: true, dailyLimit: 200, defaultStudentDailyLimit: 20, apiKey: env.DEEPSEEK_API_KEY || "" }));
   }
 }
 
 async function getConfig(env) {
   const raw = await getSetting(env, "config");
   const config = raw ? JSON.parse(raw) : {};
-  return { endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash", promptTemplate: defaultPrompt, aiEnabled: true, dailyLimit: 200, apiKey: env.DEEPSEEK_API_KEY || "", ...config };
+  return { endpoint: "https://api.deepseek.com/chat/completions", model: "deepseek-v4-flash", promptTemplate: defaultPrompt, aiEnabled: true, dailyLimit: 200, defaultStudentDailyLimit: 20, apiKey: env.DEEPSEEK_API_KEY || "", ...config };
 }
 
 function publicConfig(config) {
-  return { provider: "deepseek", endpoint: config.endpoint, model: config.model, promptTemplate: config.promptTemplate, aiEnabled: Boolean(config.aiEnabled), dailyLimit: Number(config.dailyLimit || 0), apiKeySet: Boolean(config.apiKey), apiKeyMask: config.apiKey ? "已配置" : "" };
+  return { provider: "deepseek", endpoint: config.endpoint, model: config.model, promptTemplate: config.promptTemplate, aiEnabled: Boolean(config.aiEnabled), dailyLimit: Number(config.dailyLimit || 0), defaultStudentDailyLimit: Number(config.defaultStudentDailyLimit ?? 20), apiKeySet: Boolean(config.apiKey), apiKeyMask: config.apiKey ? "已配置" : "" };
 }
 
 async function getSetting(env, key) {
@@ -288,6 +309,16 @@ async function getSetting(env, key) {
 
 async function setSetting(env, key, value) {
   await env.DB.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(key, value).run();
+}
+
+async function getAdminPassword(env) {
+  return (await getSetting(env, "adminPassword")) || env.ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD;
+}
+
+async function isAdminPasswordChanged(env) {
+  const flag = await getSetting(env, "adminPasswordChanged");
+  if (flag) return flag === "true";
+  return (await getAdminPassword(env)) !== DEFAULT_ADMIN_PASSWORD;
 }
 
 async function createSession(env, userId, role) {
@@ -309,6 +340,28 @@ async function getSession(request, env) {
 async function requireAdmin(request, env) {
   const session = await getSession(request, env);
   return session?.role === "admin" ? session : null;
+}
+
+async function requireAiAccess(request, env) {
+  const session = await getSession(request, env);
+  if (!session) return { ok: false, status: 401, error: "请先登录后使用 AI 功能" };
+  const user = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(session.user_id).first();
+  if (!user) return { ok: false, status: 401, error: "登录已失效，请重新登录" };
+  const config = await getConfig(env);
+  if (!config.aiEnabled) return { ok: false, status: 400, error: "管理员暂未启用 AI 解析" };
+  if (!config.apiKey) return { ok: false, status: 400, error: "管理员还没有配置 AI Key" };
+  const date = today();
+  const globalLimit = Number(config.dailyLimit || 0);
+  if (globalLimit > 0) {
+    const globalUsage = await env.DB.prepare("SELECT COALESCE(SUM(ai_calls), 0) AS count FROM daily_usage WHERE date = ?").bind(date).first();
+    if ((globalUsage?.count || 0) >= globalLimit) return { ok: false, status: 429, error: "今日全站 AI 调用次数已达上限" };
+  }
+  const usage = await env.DB.prepare("SELECT * FROM daily_usage WHERE user_id = ? AND date = ?").bind(user.id, date).first();
+  const userLimit = clamp(user.daily_ai_limit, 0, 100000, config.defaultStudentDailyLimit || 20);
+  if (userLimit <= 0 || (usage?.ai_calls || 0) >= userLimit) {
+    return { ok: false, status: 429, error: `今日个人 AI 调用次数已达上限（${userLimit} 次）` };
+  }
+  return { ok: true, session, user, config, usage };
 }
 
 async function callDeepSeek(config, prompt, temperature) {

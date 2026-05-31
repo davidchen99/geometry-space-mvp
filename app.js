@@ -160,6 +160,7 @@ const dom = {
   endpointInput: document.querySelector("#endpointInput"),
   modelInput: document.querySelector("#modelInput"),
   dailyLimitInput: document.querySelector("#dailyLimitInput"),
+  defaultStudentDailyLimitInput: document.querySelector("#defaultStudentDailyLimitInput"),
   aiEnabledInput: document.querySelector("#aiEnabledInput"),
   promptInput: document.querySelector("#promptInput"),
   apiKeyState: document.querySelector("#apiKeyState"),
@@ -175,6 +176,7 @@ const dom = {
   adminInviteCode: document.querySelector("#adminInviteCode"),
   adminInviteMaxUses: document.querySelector("#adminInviteMaxUses"),
   adminInviteDailyLimit: document.querySelector("#adminInviteDailyLimit"),
+  adminInviteMonthlyLimit: document.querySelector("#adminInviteMonthlyLimit"),
   inviteHint: document.querySelector("#inviteHint"),
   inviteList: document.querySelector("#inviteList"),
   userUsageList: document.querySelector("#userUsageList"),
@@ -226,6 +228,7 @@ const state = {
   adminToken: localStorage.getItem("geometry-space-admin-token") || "",
   userToken: localStorage.getItem("geometry-space-user-token") || "",
   currentUser: null,
+  adminPasswordChangeRequired: false,
   activeStep: "input",
   activeAssistMode: "",
   helpMode: false,
@@ -843,7 +846,15 @@ function openAdminModal() {
   dom.adminModal.classList.add("open");
   dom.adminModal.setAttribute("aria-hidden", "false");
   if (state.adminToken) {
-    loadAdminDashboard().catch(() => showAdminLogin("登录已过期，请重新登录"));
+    loadAdminDashboard().catch((error) => {
+      if (error.message.includes("修改默认管理员密码")) {
+        showAdminBoard();
+        dom.passwordHint.textContent = "首次使用必须先把默认密码改掉。";
+        dom.configHint.textContent = error.message;
+        return;
+      }
+      showAdminLogin("登录已过期，请重新登录");
+    });
   } else {
     showAdminLogin();
   }
@@ -877,12 +888,20 @@ async function adminLogin() {
       },
     });
     state.adminToken = data.token;
+    state.adminPasswordChangeRequired = Boolean(data.passwordChangeRequired);
     localStorage.setItem("geometry-space-admin-token", state.adminToken);
     showAdminBoard();
     fillAdminConfig(data.config);
     renderStats(data.stats);
-    loadAdminDashboard().catch(() => {});
-    dom.adminLoginHint.textContent = "登录成功";
+    if (state.adminPasswordChangeRequired) {
+      renderInvites([]);
+      renderUserUsage([]);
+      dom.passwordHint.textContent = "首次使用必须先修改默认管理员密码。";
+      dom.configHint.textContent = "请先修改默认管理员密码，之后才能保存配置和查看完整后台。";
+    } else {
+      loadAdminDashboard().catch(() => {});
+    }
+    dom.adminLoginHint.textContent = state.adminPasswordChangeRequired ? "请先修改默认密码" : "登录成功";
   } catch (error) {
     showAdminLogin(error.message);
   }
@@ -908,6 +927,7 @@ function fillAdminConfig(config) {
   dom.endpointInput.value = config.endpoint || "";
   dom.modelInput.value = config.model || "";
   dom.dailyLimitInput.value = config.dailyLimit || 200;
+  dom.defaultStudentDailyLimitInput.value = config.defaultStudentDailyLimit ?? 20;
   dom.aiEnabledInput.checked = Boolean(config.aiEnabled);
   dom.promptInput.value = config.promptTemplate || "";
   dom.apiKeyState.textContent = config.apiKeySet ? `已配置 ${config.apiKeyMask}` : "未配置";
@@ -951,6 +971,7 @@ async function saveAdminConfig(event) {
         endpoint: dom.endpointInput.value.trim(),
         model: dom.modelInput.value.trim(),
         dailyLimit: Number(dom.dailyLimitInput.value),
+        defaultStudentDailyLimit: Number(dom.defaultStudentDailyLimitInput.value),
         aiEnabled: dom.aiEnabledInput.checked,
         promptTemplate: dom.promptInput.value,
       },
@@ -973,6 +994,7 @@ async function clearApiKey() {
         endpoint: dom.endpointInput.value.trim(),
         model: dom.modelInput.value.trim(),
         dailyLimit: Number(dom.dailyLimitInput.value),
+        defaultStudentDailyLimit: Number(dom.defaultStudentDailyLimitInput.value),
         aiEnabled: dom.aiEnabledInput.checked,
         promptTemplate: dom.promptInput.value,
         clearApiKey: true,
@@ -999,7 +1021,9 @@ async function changeAdminPassword(event) {
     });
     dom.oldPasswordInput.value = "";
     dom.newPasswordInput.value = "";
+    state.adminPasswordChangeRequired = false;
     dom.passwordHint.textContent = "密码已更新。";
+    loadAdminDashboard().catch(() => {});
   } catch (error) {
     dom.passwordHint.textContent = error.message;
   }
@@ -1016,6 +1040,7 @@ async function createInvite(event) {
         code: dom.adminInviteCode.value.trim(),
         maxUses: Number(dom.adminInviteMaxUses.value || 30),
         dailyAiLimit: Number(dom.adminInviteDailyLimit.value || 20),
+        monthlyTokenLimit: Number(dom.adminInviteMonthlyLimit.value || 100000),
       },
     });
     dom.adminInviteCode.value = "";
@@ -1035,13 +1060,36 @@ function renderInvites(invites) {
     .slice(0, 10)
     .map(
       (item) => `
-        <div class="recent-item">
-          <strong>${escapeHtml(item.code)}</strong>
-          <span>已用 ${item.usedCount || 0}/${item.maxUses || 0} · 每日 AI ${item.dailyAiLimit || 0}</span>
+        <div class="recent-item invite-item">
+          <div class="invite-row">
+            <strong>${escapeHtml(item.code)}</strong>
+            <button class="copy-button" type="button" data-copy-invite="${escapeHtml(item.code)}">复制</button>
+          </div>
+          <span>已用 ${item.usedCount || 0}/${item.maxUses || 0} · 每日 AI ${item.dailyAiLimit || 0} · 月 token ${item.monthlyTokenLimit || 0}</span>
         </div>
       `,
     )
     .join("");
+  dom.inviteList.querySelectorAll("[data-copy-invite]").forEach((button) => {
+    button.addEventListener("click", () => copyInviteCode(button.dataset.copyInvite || ""));
+  });
+}
+
+async function copyInviteCode(code) {
+  if (!code) return;
+  try {
+    await navigator.clipboard.writeText(code);
+  } catch {
+    const input = document.createElement("input");
+    input.value = code;
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand("copy");
+    input.remove();
+  }
+  dom.inviteHint.textContent = `已复制：${code}`;
 }
 
 function renderUserUsage(users) {

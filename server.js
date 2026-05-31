@@ -35,10 +35,14 @@ JSON 格式：
 kind 只能是 edge、connection、aux。
 题目：{{problem}}`;
 
+const DEFAULT_ADMIN_PASSWORD = "123456";
+const DEFAULT_ADMIN_PASSWORD_HASH = hashPassword(DEFAULT_ADMIN_PASSWORD);
+
 const defaultState = {
   admin: {
     username: "admin",
-    passwordHash: hashPassword("123456"),
+    passwordHash: DEFAULT_ADMIN_PASSWORD_HASH,
+    passwordChanged: false,
   },
   config: {
     provider: "deepseek",
@@ -48,6 +52,7 @@ const defaultState = {
     promptTemplate: defaultPrompt,
     aiEnabled: true,
     dailyLimit: 200,
+    defaultStudentDailyLimit: 20,
   },
   stats: {
     totalVisits: 0,
@@ -77,7 +82,13 @@ function ensureState() {
 function readState() {
   ensureState();
   const raw = fs.readFileSync(STATE_FILE, "utf8");
-  return mergeState(defaultState, JSON.parse(raw));
+  const stored = JSON.parse(raw);
+  const state = mergeState(defaultState, stored);
+  state.config.defaultStudentDailyLimit = clampInteger(state.config.defaultStudentDailyLimit, 0, 100000, 20);
+  if (!Object.prototype.hasOwnProperty.call(stored.admin || {}, "passwordChanged")) {
+    state.admin.passwordChanged = state.admin.passwordHash !== DEFAULT_ADMIN_PASSWORD_HASH;
+  }
+  return state;
 }
 
 function writeState(state) {
@@ -131,6 +142,7 @@ function publicConfig(config) {
     promptTemplate: config.promptTemplate,
     aiEnabled: Boolean(config.aiEnabled),
     dailyLimit: Number(config.dailyLimit || 0),
+    defaultStudentDailyLimit: Number(config.defaultStudentDailyLimit ?? 20),
     apiKeySet: Boolean(config.apiKey),
     apiKeyMask: config.apiKey ? maskKey(config.apiKey) : "",
   };
@@ -241,6 +253,51 @@ function getUserUsage(stats, userId) {
   return daily.users[userId];
 }
 
+function getUserFromRequest(req, state) {
+  const session = getUserSession(req);
+  if (!session) return null;
+  return (state.users || []).find((item) => item.id === session.userId) || null;
+}
+
+function getUserDailyAiLimit(state, user) {
+  return clampInteger(user?.dailyAiLimit, 0, 100000, state.config.defaultStudentDailyLimit ?? 20);
+}
+
+function checkAiAccess(req, state) {
+  const daily = getDaily(state.stats);
+  const user = getUserFromRequest(req, state);
+  if (!user) {
+    return { ok: false, status: 401, error: "请先登录后使用 AI 功能" };
+  }
+  if (!state.config.aiEnabled) {
+    return { ok: false, status: 400, error: "管理员暂未启用 AI 解析" };
+  }
+  if (!state.config.apiKey) {
+    return { ok: false, status: 400, error: "管理员还没有配置 DeepSeek API Key" };
+  }
+  if (state.config.dailyLimit && daily.aiRequests >= state.config.dailyLimit) {
+    return { ok: false, status: 429, error: "今日全站 AI 调用次数已达上限" };
+  }
+  const userUsage = getUserUsage(state.stats, user.id);
+  const userDailyLimit = getUserDailyAiLimit(state, user);
+  if (userDailyLimit <= 0 || userUsage.aiRequests >= userDailyLimit) {
+    return { ok: false, status: 429, error: `今日个人 AI 调用次数已达上限（${userDailyLimit} 次）` };
+  }
+  return { ok: true, daily, user, userUsage, userDailyLimit };
+}
+
+function recordAiRequestStart(state, access) {
+  state.stats.aiRequests += 1;
+  access.daily.aiRequests += 1;
+  access.userUsage.aiRequests += 1;
+}
+
+function recordAiTokens(state, userId, tokens) {
+  if (!userId || !tokens) return;
+  const userUsage = getUserUsage(state.stats, userId);
+  userUsage.tokens += tokens;
+}
+
 function routeStatic(req, res, pathname) {
   const safePath = pathname === "/" ? "/index.html" : decodeURIComponent(pathname);
   const filePath = path.resolve(ROOT, `.${safePath}`);
@@ -321,6 +378,7 @@ async function handleApi(req, res, pathname) {
         const invite = inviteCode ? state.invites.find((item) => item.code === inviteCode) : null;
         if (inviteCode && !invite) return json(res, 400, { ok: false, error: "邀请码不存在" });
         if (invite && invite.maxUses && invite.usedCount >= invite.maxUses) return json(res, 400, { ok: false, error: "邀请码已用完" });
+        const defaultDailyLimit = clampInteger(state.config.defaultStudentDailyLimit, 0, 100000, 20);
         user = {
           id: crypto.randomUUID(),
           username,
@@ -328,7 +386,7 @@ async function handleApi(req, res, pathname) {
           role: "student",
           inviteCode,
           plan: invite?.plan || "trial",
-          dailyAiLimit: invite?.dailyAiLimit || 20,
+          dailyAiLimit: invite ? clampInteger(invite.dailyAiLimit, 0, 100000, defaultDailyLimit) : defaultDailyLimit,
           monthlyTokenLimit: invite?.monthlyTokenLimit || 100000,
           createdAt: new Date().toISOString(),
         };
@@ -367,12 +425,12 @@ async function handleApi(req, res, pathname) {
 
     if (req.method === "POST" && pathname === "/api/tips") {
       const body = await readBody(req);
-      return await suggestTips(res, body);
+      return await suggestTips(req, res, body);
     }
 
     if (req.method === "POST" && pathname === "/api/coach") {
       const body = await readBody(req);
-      return await coach(res, body);
+      return await coach(req, res, body);
     }
 
     if (req.method === "POST" && pathname === "/api/admin/login") {
@@ -381,11 +439,23 @@ async function handleApi(req, res, pathname) {
       if (body.username !== state.admin.username || hashPassword(body.password || "") !== state.admin.passwordHash) {
         return json(res, 401, { ok: false, error: "账号或密码不正确" });
       }
-      return json(res, 200, { ok: true, token: createSession(), config: publicConfig(state.config), stats: buildStats(state) });
+      return json(res, 200, {
+        ok: true,
+        token: createSession(),
+        passwordChangeRequired: !state.admin.passwordChanged,
+        config: publicConfig(state.config),
+        stats: buildStats(state),
+      });
     }
 
     if (pathname.startsWith("/api/admin/")) {
       if (!requireAdmin(req, res)) return;
+      if (pathname !== "/api/admin/password" && pathname !== "/api/admin/logout") {
+        const state = readState();
+        if (!state.admin.passwordChanged) {
+          return json(res, 403, { ok: false, error: "请先修改默认管理员密码" });
+        }
+      }
     }
 
     if (req.method === "GET" && pathname === "/api/admin/config") {
@@ -402,6 +472,7 @@ async function handleApi(req, res, pathname) {
       state.config.promptTemplate = String(body.promptTemplate || state.config.promptTemplate).trim();
       state.config.aiEnabled = Boolean(body.aiEnabled);
       state.config.dailyLimit = clampInteger(body.dailyLimit, 1, 100000, state.config.dailyLimit);
+      state.config.defaultStudentDailyLimit = clampInteger(body.defaultStudentDailyLimit, 0, 100000, state.config.defaultStudentDailyLimit);
       if (typeof body.apiKey === "string" && body.apiKey.trim()) {
         state.config.apiKey = body.apiKey.trim();
       }
@@ -420,7 +491,9 @@ async function handleApi(req, res, pathname) {
       }
       const next = String(body.newPassword || "");
       if (next.length < 6) return json(res, 400, { ok: false, error: "新密码至少 6 位" });
+      if (next === DEFAULT_ADMIN_PASSWORD) return json(res, 400, { ok: false, error: "新密码不能继续使用默认密码" });
       state.admin.passwordHash = hashPassword(next);
+      state.admin.passwordChanged = true;
       writeState(state);
       return json(res, 200, { ok: true });
     }
@@ -516,34 +589,17 @@ async function parseWithAi(req, res, body) {
   if (!problemText) return json(res, 400, { ok: false, error: "题目不能为空" });
 
   const state = readState();
-  const daily = getDaily(state.stats);
-  const session = getUserSession(req);
+  const access = checkAiAccess(req, state);
+  if (!access.ok) {
+    return json(res, access.status, { ok: false, error: access.error });
+  }
+  const daily = access.daily;
   state.stats.totalGenerations += 1;
   daily.generations += 1;
-  if (session) getUserUsage(state.stats, session.userId).generations += 1;
-
-  if (!state.config.aiEnabled) {
-    recordRecent(state.stats, { source: "ai", status: "failure", text: problemText, error: "AI 解析未启用" });
-    writeState(state);
-    return json(res, 400, { ok: false, error: "管理员暂未启用 AI 解析" });
-  }
-
-  if (!state.config.apiKey) {
-    recordRecent(state.stats, { source: "ai", status: "failure", text: problemText, error: "未配置 DeepSeek API Key" });
-    writeState(state);
-    return json(res, 400, { ok: false, error: "管理员还没有配置 DeepSeek API Key" });
-  }
-
-  if (state.config.dailyLimit && daily.aiRequests >= state.config.dailyLimit) {
-    recordRecent(state.stats, { source: "ai", status: "failure", text: problemText, error: "今日 AI 调用次数已达上限" });
-    writeState(state);
-    return json(res, 429, { ok: false, error: "今日 AI 调用次数已达上限" });
-  }
+  access.userUsage.generations += 1;
 
   const start = Date.now();
-  state.stats.aiRequests += 1;
-  daily.aiRequests += 1;
-  if (session) getUserUsage(state.stats, session.userId).aiRequests += 1;
+  recordAiRequestStart(state, access);
   writeState(state);
 
   try {
@@ -577,6 +633,7 @@ async function parseWithAi(req, res, body) {
     const nextDaily = getDaily(next.stats);
     next.stats.aiSuccess += 1;
     nextDaily.aiSuccess += 1;
+    recordAiTokens(next, access.user.id, data.usage?.total_tokens || 0);
     recordRecent(next.stats, {
       source: "ai",
       status: "success",
@@ -604,23 +661,23 @@ async function parseWithAi(req, res, body) {
   }
 }
 
-async function suggestTips(res, body) {
+async function suggestTips(req, res, body) {
   const problemText = String(body.text || "").trim().slice(0, 1200);
   const fallbackTips = buildLocalTips(problemText);
   const state = readState();
-  const daily = getDaily(state.stats);
+  const access = checkAiAccess(req, state);
 
-  if (!state.config.aiEnabled || !state.config.apiKey || (state.config.dailyLimit && daily.aiRequests >= state.config.dailyLimit)) {
+  if (!access.ok) {
     return json(res, 200, {
       ok: true,
       source: "local",
       tips: fallbackTips,
+      warning: access.error,
     });
   }
 
   const start = Date.now();
-  state.stats.aiRequests += 1;
-  daily.aiRequests += 1;
+  recordAiRequestStart(state, access);
   writeState(state);
 
   try {
@@ -653,6 +710,7 @@ async function suggestTips(res, body) {
     const nextDaily = getDaily(next.stats);
     next.stats.aiSuccess += 1;
     nextDaily.aiSuccess += 1;
+    recordAiTokens(next, access.user.id, data.usage?.total_tokens || 0);
     recordRecent(next.stats, {
       source: "tips",
       status: "success",
@@ -771,22 +829,21 @@ function dedupeTips(tips) {
   });
 }
 
-async function coach(res, body) {
+async function coach(req, res, body) {
   const mode = body.mode === "ask" ? "ask" : "steps";
   const problemText = String(body.text || "").trim().slice(0, 1600);
   const question = String(body.question || "").trim().slice(0, 500);
   const model = body.model && typeof body.model === "object" ? body.model : null;
   const fallback = buildLocalCoach(mode, problemText, question, model);
   const state = readState();
-  const daily = getDaily(state.stats);
+  const access = checkAiAccess(req, state);
 
-  if (!state.config.aiEnabled || !state.config.apiKey || (state.config.dailyLimit && daily.aiRequests >= state.config.dailyLimit)) {
-    return json(res, 200, { ok: true, source: "local", ...fallback });
+  if (!access.ok) {
+    return json(res, 200, { ok: true, source: "local", ...fallback, warning: access.error });
   }
 
   const start = Date.now();
-  state.stats.aiRequests += 1;
-  daily.aiRequests += 1;
+  recordAiRequestStart(state, access);
   writeState(state);
 
   try {
@@ -819,6 +876,7 @@ async function coach(res, body) {
     const nextDaily = getDaily(next.stats);
     next.stats.aiSuccess += 1;
     nextDaily.aiSuccess += 1;
+    recordAiTokens(next, access.user.id, data.usage?.total_tokens || 0);
     recordRecent(next.stats, {
       source: `coach-${mode}`,
       status: "success",
@@ -979,5 +1037,5 @@ const server = http.createServer(async (req, res) => {
 ensureState();
 server.listen(PORT, HOST, () => {
   console.log(`几何空间已启动：http://${HOST}:${PORT}/`);
-  console.log("管理员账号：admin / 123456");
+  console.log("管理员账号：admin；首次使用默认密码登录后必须立即修改。");
 });

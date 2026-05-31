@@ -292,6 +292,9 @@
           解析
         </button>
       </nav>
+      <footer class="contact-footer">
+        联系陆同学 AI：<a href="mailto:1455234504@qq.com">1455234504@qq.com</a>
+      </footer>
     </div>
 
     <div class="auth-modal" id="authModal" aria-hidden="true">
@@ -348,7 +351,7 @@
           </label>
           <label>
             <span>密码</span>
-            <input id="adminPassword" type="password" autocomplete="current-password" value="123456" />
+            <input id="adminPassword" type="password" autocomplete="current-password" />
           </label>
           <button class="primary-button" id="adminLoginBtn" type="button">
             <i data-lucide="log-in"></i>
@@ -398,6 +401,10 @@
               <label>
                 <span>每日 AI 调用上限</span>
                 <input id="dailyLimitInput" type="number" min="1" max="100000" />
+              </label>
+              <label>
+                <span>无邀请码每日 AI 上限</span>
+                <input id="defaultStudentDailyLimitInput" type="number" min="0" max="100000" />
               </label>
               <label class="toggle-line">
                 <input id="aiEnabledInput" type="checkbox" />
@@ -449,6 +456,10 @@
                 <label>
                   <span>每日 AI 上限</span>
                   <input id="adminInviteDailyLimit" type="number" min="1" value="20" />
+                </label>
+                <label>
+                  <span>每月 token 上限</span>
+                  <input id="adminInviteMonthlyLimit" type="number" min="1000" value="100000" />
                 </label>
                 <button class="secondary-button" type="submit">创建邀请码</button>
                 <p class="admin-hint" id="inviteHint">邀请码用于学生登记。</p>
