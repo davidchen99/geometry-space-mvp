@@ -52,6 +52,31 @@ const starterTips = [
   },
 ];
 
+const historyKey = "geometry-space-problem-history";
+
+const helpItems = [
+  {
+    title: "生成图形",
+    text: "把题目写清楚：图形名称、点名、长度、垂直/平行/中点、需要连接的线。",
+  },
+  {
+    title: "看三维模型",
+    text: "拖动旋转，滚轮缩放。手机上单指旋转，双指缩放。",
+  },
+  {
+    title: "点击元素",
+    text: "点、线、面都能点击。右侧会显示当前元素和长度、坐标等信息。",
+  },
+  {
+    title: "测距",
+    text: "点尺子图标后，依次点击两个点，会显示两点距离。",
+  },
+  {
+    title: "题目不会写",
+    text: "点 Tips 或 Help。系统会提示缺少图形、点名、长度或关系。",
+  },
+];
+
 const dom = {
   appShell: document.querySelector("#appShell"),
   input: document.querySelector("#problemInput"),
@@ -60,12 +85,14 @@ const dom = {
   tipsPanel: document.querySelector("#tipsPanel"),
   tipsList: document.querySelector("#tipsList"),
   tipsState: document.querySelector("#tipsState"),
+  problemHints: document.querySelector("#problemHints"),
   clearBtn: document.querySelector("#clearBtn"),
   selectAllBtn: document.querySelector("#selectAllBtn"),
   sampleList: document.querySelector("#sampleList"),
   title: document.querySelector("#modelTitle"),
   summary: document.querySelector("#modelSummary"),
   relationList: document.querySelector("#relationList"),
+  equationList: document.querySelector("#equationList"),
   elementList: document.querySelector("#elementList"),
   selectedBox: document.querySelector("#selectedBox"),
   parseBadge: document.querySelector("#parseBadge"),
@@ -112,6 +139,19 @@ const dom = {
   stepButtons: Array.from(document.querySelectorAll("[data-step]")),
   conceptSteps: Array.from(document.querySelectorAll("[data-concept]")),
   mobileTabs: Array.from(document.querySelectorAll(".mobile-tab[data-mobile-panel]")),
+  assistDrawer: document.querySelector("#assistDrawer"),
+  assistTitle: document.querySelector("#assistTitle"),
+  assistCloseBtn: document.querySelector("#assistCloseBtn"),
+  assistModeButtons: Array.from(document.querySelectorAll("[data-assist-mode]")),
+  assistPanels: Array.from(document.querySelectorAll("[data-assist-panel]")),
+  historyList: document.querySelector("#historyList"),
+  stepsList: document.querySelector("#stepsList"),
+  refreshStepsBtn: document.querySelector("#refreshStepsBtn"),
+  assistEquationBox: document.querySelector("#assistEquationBox"),
+  askInput: document.querySelector("#askInput"),
+  askSubmitBtn: document.querySelector("#askSubmitBtn"),
+  askAnswer: document.querySelector("#askAnswer"),
+  helpList: document.querySelector("#helpList"),
 };
 
 const state = {
@@ -137,6 +177,8 @@ const state = {
   backendAvailable: false,
   adminToken: localStorage.getItem("geometry-space-admin-token") || "",
   activeStep: "input",
+  activeAssistMode: "",
+  helpMode: false,
 };
 
 const colors = {
@@ -180,6 +222,7 @@ function initUI() {
     dom.input.value = "";
     dom.input.focus();
     clearGeneratedModel();
+    updateProblemHints("");
     setActiveStep("input");
     setMobilePanel("input");
     setStatus("已清空题目");
@@ -195,6 +238,7 @@ function initUI() {
     }
   });
   dom.input.addEventListener("focus", () => setActiveStep("input"));
+  dom.input.addEventListener("input", () => updateProblemHints(dom.input.value));
 
   dom.resetViewBtn.addEventListener("click", resetCameraToModel);
   dom.gridBtn.addEventListener("click", () => {
@@ -216,6 +260,15 @@ function initUI() {
   dom.mobileTabs.forEach((button) => {
     button.addEventListener("click", () => setMobilePanel(button.dataset.mobilePanel || "none"));
   });
+  dom.assistModeButtons.forEach((button) => {
+    button.addEventListener("click", () => openAssist(button.dataset.assistMode));
+  });
+  dom.assistCloseBtn.addEventListener("click", closeAssist);
+  dom.refreshStepsBtn.addEventListener("click", () => renderStudySteps(true));
+  dom.askSubmitBtn.addEventListener("click", askQuestion);
+  dom.askInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") askQuestion();
+  });
 
   dom.canvas.addEventListener("pointerdown", handlePointerDown);
   window.addEventListener("resize", resizeRenderer);
@@ -223,6 +276,9 @@ function initUI() {
   initAdminUI();
   checkBackend();
   recordVisit();
+  renderHelpPanel();
+  renderHistory();
+  updateProblemHints(dom.input.value);
   window.lucide?.createIcons();
   generateModel();
   if (window.location.hash === "#admin") {
@@ -329,6 +385,18 @@ async function requestBackendTips(text) {
   return apiFetch("/api/tips", {
     method: "POST",
     body: { text },
+  });
+}
+
+async function requestBackendCoach(mode, payload) {
+  return apiFetch("/api/coach", {
+    method: "POST",
+    body: {
+      mode,
+      text: dom.input.value.trim(),
+      model: summarizeCurrentModel(),
+      ...payload,
+    },
   });
 }
 
@@ -520,6 +588,271 @@ async function changeAdminPassword(event) {
   }
 }
 
+function updateProblemHints(text, extraMessage = "") {
+  const hints = analyzeProblemText(text);
+  if (extraMessage) hints.unshift({ level: "warn", text: extraMessage });
+
+  if (!hints.length) {
+    dom.problemHints.hidden = true;
+    dom.problemHints.innerHTML = "";
+    return [];
+  }
+
+  dom.problemHints.hidden = false;
+  dom.problemHints.innerHTML = hints
+    .slice(0, 4)
+    .map((hint) => `<div class="hint-line hint-${hint.level}">${escapeHtml(hint.text)}</div>`)
+    .join("");
+  return hints;
+}
+
+function analyzeProblemText(text) {
+  const clean = normalizeText(text || "");
+  const hints = [];
+  if (!clean) return hints;
+
+  if (!/(正方体|长方体|三棱锥|四棱锥|正四棱锥|三角形|△)/.test(clean)) {
+    hints.push({ level: "warn", text: "题目里最好先写清图形类型，例如正方体、长方体、三棱锥或三角形。" });
+  }
+
+  const labels = clean.match(/[A-Z][0-9]?/g) || [];
+  if (labels.length < 3) {
+    hints.push({ level: "warn", text: "点名偏少，建议写出 A、B、C、P、A1 这类顶点标记。" });
+  }
+
+  if (!/(边长|棱长|底边长|=|为)\d/.test(clean)) {
+    hints.push({ level: "info", text: "没有看到长度，系统会用默认尺寸；想更准确可以写 AB=2 或边长为2。" });
+  }
+
+  if (!/(连接|连结|中点|交点|重心|垂直|平行|⊥|\/\/)/.test(clean)) {
+    hints.push({ level: "info", text: "可以补充中点、垂直、平行或连接线，模型会更贴近题意。" });
+  }
+
+  const unsupported = clean.match(/圆|椭圆|抛物线|双曲线|球|圆锥|圆柱/);
+  if (unsupported) {
+    hints.unshift({ level: "warn", text: `当前本地规则暂不稳定支持“${unsupported[0]}”，建议点 Tips 或让 AI 解析。` });
+  }
+
+  return hints;
+}
+
+function openAssist(mode) {
+  if (state.activeAssistMode === "help" && mode !== "help") toggleHelpMode(false);
+  state.activeAssistMode = mode;
+  dom.assistDrawer.hidden = false;
+  dom.assistModeButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.assistMode === mode);
+  });
+  dom.assistPanels.forEach((panel) => {
+    panel.hidden = panel.dataset.assistPanel !== mode;
+  });
+
+  const titles = {
+    history: "历史记录",
+    steps: "解题步骤",
+    ask: "问一问",
+    help: "Help 模式",
+  };
+  dom.assistTitle.textContent = titles[mode] || "学习助手";
+
+  if (mode === "history") renderHistory();
+  if (mode === "steps") renderStudySteps(false);
+  if (mode === "help") toggleHelpMode(true);
+  if (mode === "ask") dom.askInput.focus();
+  closeMobilePanel();
+  window.lucide?.createIcons();
+}
+
+function closeAssist() {
+  dom.assistDrawer.hidden = true;
+  dom.assistModeButtons.forEach((button) => button.classList.remove("active"));
+  if (state.activeAssistMode === "help") toggleHelpMode(false);
+  state.activeAssistMode = "";
+}
+
+function toggleHelpMode(active = !state.helpMode) {
+  state.helpMode = active;
+  document.body.classList.toggle("help-mode", state.helpMode);
+  setStatus(state.helpMode ? "Help 模式：看页面上的简短标注" : "已退出 Help 模式");
+}
+
+function renderHelpPanel() {
+  dom.helpList.innerHTML = helpItems
+    .map(
+      (item) => `
+        <article class="help-item">
+          <strong>${escapeHtml(item.title)}</strong>
+          <span>${escapeHtml(item.text)}</span>
+        </article>
+      `,
+    )
+    .join("");
+}
+
+function getHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(historyKey) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(entry) {
+  const history = getHistory();
+  const next = [
+    {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      time: new Date().toISOString(),
+      text: entry.text,
+      title: entry.title || "未生成",
+      source: entry.source || "local",
+      status: entry.status || "success",
+      error: entry.error || "",
+    },
+    ...history.filter((item) => item.text !== entry.text),
+  ].slice(0, 30);
+  localStorage.setItem(historyKey, JSON.stringify(next));
+  renderHistory();
+}
+
+function renderHistory() {
+  const history = getHistory();
+  if (!history.length) {
+    dom.historyList.innerHTML = '<div class="empty-note">还没有做题记录。</div>';
+    return;
+  }
+
+  dom.historyList.innerHTML = "";
+  history.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "history-item";
+    const time = new Date(item.time).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const status = item.status === "success" ? item.title : item.error || "解析失败";
+    button.innerHTML = `
+      <strong>${escapeHtml(status)}</strong>
+      <span>${escapeHtml(time)} · ${escapeHtml(item.source || "local")}</span>
+      <small>${escapeHtml(item.text || "")}</small>
+    `;
+    button.addEventListener("click", () => {
+      dom.input.value = item.text || "";
+      updateProblemHints(dom.input.value);
+      setActiveStep("input");
+      setMobilePanel("input");
+      closeAssist();
+      setStatus("已恢复历史题目");
+    });
+    dom.historyList.appendChild(button);
+  });
+}
+
+function renderStudySteps(refreshFromApi = false) {
+  const local = buildLocalStudy();
+  renderStudyContent(local);
+
+  if (!refreshFromApi) return;
+  dom.stepsList.innerHTML = "<li>正在整理更完整的步骤...</li>";
+  requestBackendCoach("steps", {})
+    .then((data) => {
+      renderStudyContent({
+        equations: data.equations?.length ? data.equations : local.equations,
+        steps: data.steps?.length ? data.steps : local.steps,
+      });
+      setStatus(data.source === "ai" ? "AI 步骤已更新" : "步骤已更新");
+    })
+    .catch((error) => {
+      renderStudyContent(local);
+      setStatus(`步骤已使用本地版本：${error.message}`);
+    });
+}
+
+function renderStudyContent(content) {
+  const equations = content.equations || [];
+  dom.assistEquationBox.innerHTML = equations.length
+    ? equations.map((item) => `<div>${escapeHtml(item)}</div>`).join("")
+    : "<div>生成模型后会显示坐标、方程或参数表达。</div>";
+
+  const steps = content.steps || [];
+  dom.stepsList.innerHTML = steps.length ? steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("") : "<li>先生成一个三维模型。</li>";
+}
+
+function buildLocalStudy(model = state.currentModel) {
+  if (!model) {
+    return {
+      equations: [],
+      steps: ["先输入题目并生成模型。", "如果题目不清楚，点 Tips 选择一个规范表达。"],
+    };
+  }
+
+  const relations = model.relations?.slice(0, 3) || [];
+  const steps = [
+    `识别题型：${model.title}。`,
+    "建立坐标系：底面尽量放在 z=0 平面，高度沿 z 轴向上。",
+    `标出关键元素：${Object.keys(model.points).length} 个点、${model.segments.length} 条线、${model.faces.length} 个面。`,
+  ];
+
+  if (relations.length) steps.push(`读出题目关系：${relations.join("；")}。`);
+  steps.push("拖动模型观察空间位置，点击点、线、面确认细节。");
+  steps.push("需要长度时点尺子图标，再依次点击两个点。");
+
+  return {
+    equations: model.equations || buildModelEquations(model),
+    steps,
+  };
+}
+
+async function askQuestion() {
+  const question = dom.askInput.value.trim();
+  if (!question) {
+    dom.askAnswer.textContent = "先输入一个问题，例如：为什么 P 点在 A 点上方？";
+    return;
+  }
+
+  dom.askAnswer.textContent = "正在回答...";
+  try {
+    const data = await requestBackendCoach("ask", { question });
+    dom.askAnswer.textContent = data.answer || buildLocalAnswer(question);
+    setStatus(data.source === "ai" ? "AI 已回答" : "已给出本地回答");
+  } catch (error) {
+    dom.askAnswer.textContent = buildLocalAnswer(question);
+    setStatus(`已给出本地回答：${error.message}`);
+  }
+}
+
+function buildLocalAnswer(question) {
+  const model = state.currentModel;
+  if (!model) return "先生成三维模型，我才能结合图形回答。";
+
+  if (/方程|轨迹|坐标/.test(question)) {
+    return (model.equations || buildModelEquations(model)).join("；") || "当前模型没有可显示的方程。";
+  }
+  if (/中点/.test(question)) {
+    const mid = Object.values(model.points).find((point) => point.role.includes("中点"));
+    return mid
+      ? `${mid.label} 是${mid.role}，坐标是 (${formatNumber(mid.position.x)}, ${formatNumber(mid.position.y)}, ${formatNumber(mid.position.z)})。`
+      : "当前题目没有识别到中点。";
+  }
+  if (/高|垂直/.test(question)) {
+    const relation = model.relations.find((item) => item.includes("⟂") || item.includes("垂直"));
+    return relation ? `图中关键垂直关系是：${relation}。` : "当前题目没有识别到明确的垂直关系。";
+  }
+  return `可以先看右侧解析：${model.description} 再点击模型中的点、线、面确认空间位置。`;
+}
+
+function summarizeCurrentModel() {
+  const model = state.currentModel;
+  if (!model) return null;
+  return {
+    title: model.title,
+    description: model.description,
+    pointCount: Object.keys(model.points || {}).length,
+    segmentCount: model.segments?.length || 0,
+    faceCount: model.faces?.length || 0,
+    relations: (model.relations || []).slice(0, 8),
+    equations: (model.equations || buildModelEquations(model)).slice(0, 5),
+  };
+}
+
 async function showInputTips() {
   const text = dom.input.value.trim();
   dom.tipsPanel.hidden = false;
@@ -580,6 +913,7 @@ function renderTips(tips, stateText) {
     button.addEventListener("click", () => {
       dom.input.value = tip.text || "";
       dom.input.focus();
+      updateProblemHints(dom.input.value);
       setActiveStep("input");
       setStatus("已填入 Tips");
     });
@@ -677,9 +1011,11 @@ async function generateModel() {
   const text = dom.input.value.trim();
   if (!text) {
     setStatus("请先输入题目");
+    updateProblemHints(text, "请先输入一道题，或者点 Tips 选一个模板。");
     return;
   }
 
+  updateProblemHints(text);
   setLoading(true);
   setActiveStep("parse");
   setStatus("正在解析题目...");
@@ -691,6 +1027,7 @@ async function generateModel() {
       model.source = "local";
       renderModel(model);
       setStatus(`已生成 ${model.title}`);
+      saveHistory({ text, title: model.title, source: "local", status: "success" });
       recordUsage({ source: "local", success: true, text, modelTitle: model.title });
       return;
     } catch (localError) {
@@ -700,14 +1037,17 @@ async function generateModel() {
       const aiModel = await requestBackendParse(text);
       aiModel.source = "ai";
       centerModelOnXY(aiModel);
+      aiModel.equations = aiModel.equations?.length ? aiModel.equations : buildModelEquations(aiModel);
       renderModel(aiModel);
       setStatus(`DeepSeek 已生成 ${aiModel.title}`);
+      saveHistory({ text, title: aiModel.title, source: "ai", status: "success" });
       return;
     }
   } catch (error) {
     clearGeneratedModel();
     showParseError(error);
     setActiveStep("parse");
+    saveHistory({ text, title: "解析失败", source: state.backendAvailable ? "ai" : "local", status: "failure", error: error.message });
     if (!state.backendAvailable) {
       recordUsage({ source: "local", success: false, text, error: error.message });
     }
@@ -736,6 +1076,7 @@ function buildModelFromText(rawText) {
 
   applyTextFeatures(model, text);
   centerModelOnXY(model);
+  model.equations = buildModelEquations(model);
   model.source = "local";
   return model;
 }
@@ -759,6 +1100,7 @@ function createBaseModel(type, title, description) {
     segments: [],
     faces: [],
     relations: [],
+    equations: [],
   };
 }
 
@@ -1079,6 +1421,43 @@ function addRelation(model, text) {
   model.relations.push(text);
 }
 
+function buildModelEquations(model) {
+  if (!model || !Object.keys(model.points || {}).length) return [];
+  const bounds = computeBounds(model);
+  const minZ = formatNumber(bounds.min.z);
+  const maxZ = formatNumber(bounds.max.z);
+  const equations = [`底面平面：z = ${minZ}`];
+
+  if (Math.abs(bounds.max.z - bounds.min.z) > 0.001) {
+    equations.push(`高度范围：${minZ} <= z <= ${maxZ}`);
+  }
+
+  const connection = model.segments.find((segment) => segment.kind === "connection");
+  if (connection) equations.push(segmentParamEquation(model, connection, "轨迹方程"));
+
+  const vertical = model.segments.find((segment) => {
+    const from = model.points[segment.from]?.position;
+    const to = model.points[segment.to]?.position;
+    return from && to && Math.abs(from.x - to.x) < 0.001 && Math.abs(from.y - to.y) < 0.001 && Math.abs(from.z - to.z) > 0.001;
+  });
+  if (vertical) equations.push(segmentParamEquation(model, vertical, "高线方程"));
+
+  const edge = model.segments.find((segment) => segment.kind === "edge");
+  if (edge) equations.push(segmentParamEquation(model, edge, "边的参数方程"));
+
+  return [...new Set(equations.filter(Boolean))].slice(0, 5);
+}
+
+function segmentParamEquation(model, segment, title) {
+  const from = model.points[segment.from]?.position;
+  const to = model.points[segment.to]?.position;
+  if (!from || !to) return "";
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dz = to.z - from.z;
+  return `${title} ${segment.label}：(x,y,z)=(${formatNumber(from.x)},${formatNumber(from.y)},${formatNumber(from.z)})+t(${formatNumber(dx)},${formatNumber(dy)},${formatNumber(dz)})，0<=t<=1`;
+}
+
 function parseGlobalLength(text, fallback) {
   const match = text.match(/(?:边长|棱长|底边长)(?:为|是|=)?(\d+(?:\.\d+)?)/);
   return match ? Number(match[1]) : fallback;
@@ -1297,6 +1676,7 @@ function clearGeneratedModel() {
   dom.title.textContent = "等待生成";
   dom.summary.textContent = "选择示例或粘贴题目后生成图形。";
   dom.relationList.innerHTML = "";
+  dom.equationList.innerHTML = "";
   dom.elementList.innerHTML = "";
   updateSelectedBox(null);
 }
@@ -1318,13 +1698,21 @@ function renderModelInfo(model) {
   dom.title.textContent = model.title;
   dom.summary.textContent = model.description;
   dom.relationList.innerHTML = "";
+  dom.equationList.innerHTML = "";
   model.relations.slice(0, 12).forEach((relation) => {
     const item = document.createElement("span");
     item.className = "relation-pill";
     item.textContent = relation;
     dom.relationList.appendChild(item);
   });
+  (model.equations || buildModelEquations(model)).slice(0, 5).forEach((equation) => {
+    const item = document.createElement("div");
+    item.className = "equation-pill";
+    item.textContent = equation;
+    dom.equationList.appendChild(item);
+  });
   dom.parseBadge.textContent = model.source === "ai" ? "DeepSeek 解析" : "本地规则解析";
+  if (state.activeAssistMode === "steps") renderStudySteps(false);
 }
 
 function renderElementList(model) {
@@ -1504,6 +1892,8 @@ function showParseError(error) {
   dom.title.textContent = "解析失败";
   dom.summary.textContent = `${error.message} 当前 MVP 优先支持常见正方体、长方体、三棱锥、四棱锥和三角形。`;
   dom.relationList.innerHTML = "";
+  dom.equationList.innerHTML = "";
+  updateProblemHints(dom.input.value, error.message);
   setMobilePanel("info");
   setStatus("解析失败，请换用更明确的题目描述");
 }
@@ -1579,7 +1969,7 @@ function updateLabels() {
 }
 
 function buildDeepSeekPrompt(problemText) {
-  return `你是几何题结构化解析器。请把题目解析为 JSON，字段包括 points、segments、faces、relations、solidType。只输出 JSON。\n题目：${problemText}`;
+  return `你是几何题结构化解析器。请把题目解析为 JSON，字段包括 points、segments、faces、relations、equations、solidType。只输出 JSON。\n题目：${problemText}`;
 }
 
 async function requestDeepSeekParse(problemText) {

@@ -50,7 +50,7 @@
 
       <main class="workspace">
         <aside class="input-panel app-panel" aria-label="题目输入区">
-          <section class="problem-card">
+          <section class="problem-card" data-help="先把题目放这里，点生成即可。题目越像课本原句越稳定。">
             <div class="panel-heading">
               <div>
                 <span class="eyebrow">输入</span>
@@ -68,11 +68,11 @@
             ></textarea>
 
             <div class="primary-actions">
-              <button class="primary-button" id="generateBtn" type="button">
+              <button class="primary-button" id="generateBtn" type="button" data-help="核心按钮：把题目转成三维模型。">
                 <i data-lucide="wand-sparkles"></i>
                 生成图形
               </button>
-              <button class="secondary-button" id="tipsBtn" type="button">
+              <button class="secondary-button" id="tipsBtn" type="button" data-help="题目不会写时点这里，选择一条规范表达。">
                 <i data-lucide="lightbulb"></i>
                 Tips
               </button>
@@ -80,6 +80,7 @@
                 全选
               </button>
             </div>
+            <div class="problem-hints" id="problemHints" hidden></div>
           </section>
 
           <section class="tips-panel" id="tipsPanel" aria-label="输入 Tips" hidden>
@@ -113,7 +114,7 @@
             </div>
           </div>
 
-          <div class="viewer-toolbar" aria-label="模型操作">
+          <div class="viewer-toolbar" aria-label="模型操作" data-help="这里是模型工具：重置视角、网格、辅助线、测距、导出图片。">
             <button class="tool-button" id="resetViewBtn" type="button" aria-label="重置视角" title="重置视角">
               <i data-lucide="rotate-ccw"></i>
             </button>
@@ -131,7 +132,7 @@
             </button>
           </div>
 
-          <div class="scene-wrap" id="sceneWrap">
+          <div class="scene-wrap" id="sceneWrap" data-help="拖动旋转，滚轮缩放，点击点、线、面查看信息。">
             <canvas id="sceneCanvas"></canvas>
             <div class="label-layer" id="labelLayer" aria-hidden="true"></div>
             <div class="empty-state" id="emptyState">
@@ -142,9 +143,28 @@
           </div>
 
           <div class="viewer-status" id="statusText">准备就绪</div>
+
+          <div class="assist-dock" aria-label="学习辅助">
+            <button class="assist-chip" id="historyBtn" type="button" data-assist-mode="history" title="历史记录">
+              <i data-lucide="clock-3"></i>
+              <span>历史</span>
+            </button>
+            <button class="assist-chip" id="stepsBtn" type="button" data-assist-mode="steps" title="解题步骤">
+              <i data-lucide="list-checks"></i>
+              <span>步骤</span>
+            </button>
+            <button class="assist-chip" id="askBtn" type="button" data-assist-mode="ask" title="问一问">
+              <i data-lucide="message-circle-question"></i>
+              <span>问答</span>
+            </button>
+            <button class="assist-chip" id="helpBtn" type="button" data-assist-mode="help" title="Help 模式">
+              <i data-lucide="circle-help"></i>
+              <span>Help</span>
+            </button>
+          </div>
         </section>
 
-        <aside class="insight-panel app-panel" id="insightPanel" aria-label="解析与元素">
+        <aside class="insight-panel app-panel" id="insightPanel" aria-label="解析与元素" data-help="这里显示解析出的关系、方程和被点击元素的信息。">
           <section class="parse-panel" aria-label="解析结果">
             <div class="section-title">
               <span>解析</span>
@@ -153,6 +173,7 @@
             <h2 id="modelTitle">等待生成</h2>
             <p id="modelSummary">选择示例或粘贴题目后生成图形。</p>
             <div class="relation-list" id="relationList"></div>
+            <div class="equation-list" id="equationList"></div>
           </section>
 
           <section class="inspect-panel" aria-label="元素信息">
@@ -171,6 +192,46 @@
           </section>
         </aside>
       </main>
+
+      <aside class="assist-drawer" id="assistDrawer" aria-label="学习辅助面板" hidden>
+        <header class="assist-header">
+          <div>
+            <span class="eyebrow">辅助</span>
+            <h2 id="assistTitle">学习助手</h2>
+          </div>
+          <button class="icon-button ghost" id="assistCloseBtn" type="button" aria-label="关闭学习助手">
+            <i data-lucide="x"></i>
+          </button>
+        </header>
+
+        <section class="assist-panel" data-assist-panel="history" hidden>
+          <div class="assist-note">最近做过的题目保存在本机浏览器里，点击可以恢复。</div>
+          <div class="history-list" id="historyList"></div>
+        </section>
+
+        <section class="assist-panel" data-assist-panel="steps" hidden>
+          <div class="assist-actions">
+            <button class="secondary-button compact" id="refreshStepsBtn" type="button">
+              <i data-lucide="refresh-cw"></i>
+              更新步骤
+            </button>
+          </div>
+          <div class="equation-card" id="assistEquationBox"></div>
+          <ol class="steps-list" id="stepsList"></ol>
+        </section>
+
+        <section class="assist-panel" data-assist-panel="ask" hidden>
+          <div class="ask-box" id="askAnswer">可以问：为什么这样建坐标？哪条线是高？这个中点在哪里？</div>
+          <div class="ask-row">
+            <input id="askInput" autocomplete="off" placeholder="输入你的问题" />
+            <button class="primary-button compact" id="askSubmitBtn" type="button">问</button>
+          </div>
+        </section>
+
+        <section class="assist-panel" data-assist-panel="help" hidden>
+          <div class="help-list" id="helpList"></div>
+        </section>
+      </aside>
 
       <nav class="mobile-nav" aria-label="移动端快捷操作">
         <button class="mobile-tab active" type="button" data-mobile-panel="input">

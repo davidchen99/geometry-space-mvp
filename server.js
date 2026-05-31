@@ -28,7 +28,8 @@ JSON 格式：
   "faces": [
     { "label": "平面ABC", "vertices": ["A", "B", "C"] }
   ],
-  "relations": ["AB ⟂ BC"]
+  "relations": ["AB ⟂ BC"],
+  "equations": ["底面平面：z = 0", "轨迹方程 AB：(x,y,z)=(0,0,0)+t(1,0,0)，0<=t<=1"]
 }
 kind 只能是 edge、connection、aux。
 题目：{{problem}}`;
@@ -270,6 +271,11 @@ async function handleApi(req, res, pathname) {
     if (req.method === "POST" && pathname === "/api/tips") {
       const body = await readBody(req);
       return await suggestTips(res, body);
+    }
+
+    if (req.method === "POST" && pathname === "/api/coach") {
+      const body = await readBody(req);
+      return await coach(res, body);
     }
 
     if (req.method === "POST" && pathname === "/api/admin/login") {
@@ -618,6 +624,139 @@ function dedupeTips(tips) {
   });
 }
 
+async function coach(res, body) {
+  const mode = body.mode === "ask" ? "ask" : "steps";
+  const problemText = String(body.text || "").trim().slice(0, 1600);
+  const question = String(body.question || "").trim().slice(0, 500);
+  const model = body.model && typeof body.model === "object" ? body.model : null;
+  const fallback = buildLocalCoach(mode, problemText, question, model);
+  const state = readState();
+  const daily = getDaily(state.stats);
+
+  if (!state.config.aiEnabled || !state.config.apiKey || (state.config.dailyLimit && daily.aiRequests >= state.config.dailyLimit)) {
+    return json(res, 200, { ok: true, source: "local", ...fallback });
+  }
+
+  const start = Date.now();
+  state.stats.aiRequests += 1;
+  daily.aiRequests += 1;
+  writeState(state);
+
+  try {
+    const response = await fetch(state.config.endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${state.config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: state.config.model,
+        messages: [
+          { role: "system", content: "你只输出 JSON，不要解释。回答面向初中或高中学生，简短清楚。" },
+          { role: "user", content: buildCoachPrompt(mode, problemText, question, model) },
+        ],
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = data.error?.message || `DeepSeek 请求失败：${response.status}`;
+      throw new Error(message);
+    }
+
+    const content = data.choices?.[0]?.message?.content || "{}";
+    const normalized = normalizeCoach(JSON.parse(stripJsonFence(content)), fallback);
+    const next = readState();
+    const nextDaily = getDaily(next.stats);
+    next.stats.aiSuccess += 1;
+    nextDaily.aiSuccess += 1;
+    recordRecent(next.stats, {
+      source: `coach-${mode}`,
+      status: "success",
+      text: problemText || question || "空请求",
+      modelTitle: mode === "ask" ? "问答" : "步骤",
+      latencyMs: Date.now() - start,
+      tokens: data.usage?.total_tokens || 0,
+    });
+    writeState(next);
+    return json(res, 200, { ok: true, source: "ai", ...normalized });
+  } catch (error) {
+    const next = readState();
+    const nextDaily = getDaily(next.stats);
+    next.stats.aiFailure += 1;
+    nextDaily.aiFailure += 1;
+    recordRecent(next.stats, {
+      source: `coach-${mode}`,
+      status: "failure",
+      text: problemText || question || "空请求",
+      error: error.message || "辅导失败",
+      latencyMs: Date.now() - start,
+    });
+    writeState(next);
+    return json(res, 200, { ok: true, source: "local", ...fallback, warning: error.message || "辅导失败" });
+  }
+}
+
+function buildCoachPrompt(mode, problemText, question, model) {
+  const modelText = model ? JSON.stringify(model) : "尚未生成模型";
+  if (mode === "ask") {
+    return `请回答学生关于几何模型的问题。
+要求：不超过 120 字；先直接回答，再指出要看图中的哪个点/线/面。
+只输出 JSON：{"answer":"回答文本"}
+题目：${problemText || "未提供"}
+当前模型摘要：${modelText}
+学生问题：${question || "未提供"}`;
+  }
+
+  return `请为几何建模题生成简短解题/建模步骤。
+要求：面向初中或高中学生；步骤 4 到 6 条；如果有方程或轨迹表达，把 equations 单独列出；不要写长篇证明。
+只输出 JSON：{"equations":["方程"],"steps":["步骤"]}
+题目：${problemText || "未提供"}
+当前模型摘要：${modelText}`;
+}
+
+function normalizeCoach(input, fallback) {
+  const steps = Array.isArray(input.steps) ? input.steps.map((item) => String(item).trim()).filter(Boolean).slice(0, 8) : fallback.steps || [];
+  const equations = Array.isArray(input.equations)
+    ? input.equations.map((item) => String(item).trim()).filter(Boolean).slice(0, 6)
+    : fallback.equations || [];
+  const answer = String(input.answer || fallback.answer || "").trim();
+  return { steps, equations, answer };
+}
+
+function buildLocalCoach(mode, problemText, question, model) {
+  const equations = Array.isArray(model?.equations) ? model.equations.slice(0, 5) : [];
+  const title = model?.title || "当前模型";
+
+  if (mode === "ask") {
+    let answer = "先生成三维模型，再结合图形问我具体的点、线、面。";
+    if (model) {
+      if (/方程|轨迹|坐标/.test(question)) {
+        answer = equations.length ? equations.join("；") : "当前模型暂时没有可显示的方程。";
+      } else if (/高|垂直/.test(question)) {
+        answer = model.relations?.find((item) => /⟂|垂直/.test(item)) || "当前模型没有明确垂直关系。";
+      } else {
+        answer = `${title} 已生成。可以点击模型中的点、线、面，先确认空间位置，再看右侧关系。`;
+      }
+    }
+    return { answer, steps: [], equations };
+  }
+
+  const steps = model
+    ? [
+        `识别题型：${title}。`,
+        "建立坐标系：底面放在 z=0，高度沿 z 轴。",
+        `标出元素：${model.pointCount || 0} 个点、${model.segmentCount || 0} 条线、${model.faceCount || 0} 个面。`,
+        ...(model.relations?.length ? [`使用关系：${model.relations.slice(0, 3).join("；")}。`] : []),
+        "拖动模型观察，再点击关键点线面确认。",
+      ]
+    : ["先输入题目并生成模型。", "题目不清楚时，点 Tips 选择规范表达。"];
+
+  return { steps, equations, answer: "" };
+}
+
 function stripJsonFence(content) {
   return String(content)
     .replace(/^```json\s*/i, "")
@@ -678,6 +817,7 @@ function normalizeAiModel(input) {
     segments,
     faces,
     relations: Array.isArray(input.relations) ? input.relations.map(String).slice(0, 20) : [],
+    equations: Array.isArray(input.equations) ? input.equations.map(String).slice(0, 10) : [],
   };
 }
 
