@@ -4,7 +4,9 @@
   "private": true,
   "description": "几何空间：数学题文字转图形理解工具",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build:cf": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Remove-Item -Recurse -Force public -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force public | Out-Null; Copy-Item index.html,styles.css,app.js public/; Copy-Item cloudflare/_worker.js public/_worker.js\"",
+    "deploy:cf": "npm run build:cf && wrangler pages deploy public --project-name geometry-space-mvp --commit-dirty=true"
   },
   "engines": {
     "node": ">=18"

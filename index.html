@@ -46,6 +46,10 @@
           <i data-lucide="shield"></i>
           管理
         </button>
+        <button class="user-entry" id="userOpenBtn" type="button">
+          <i data-lucide="user-round"></i>
+          <span id="userEntryText">登录</span>
+        </button>
       </header>
 
       <main class="workspace">
@@ -253,6 +257,36 @@
       </nav>
     </div>
 
+    <div class="auth-modal" id="authModal" aria-hidden="true">
+      <div class="admin-backdrop" id="authCloseBackdrop"></div>
+      <section class="auth-dialog" role="dialog" aria-modal="true" aria-label="学生登录">
+        <header class="admin-header">
+          <div>
+            <h2>学生登录</h2>
+            <p>手机号登记后可以保存记录，管理员能看到用量。</p>
+          </div>
+          <button class="icon-button" id="authCloseBtn" type="button" aria-label="关闭登录">
+            <i data-lucide="x"></i>
+          </button>
+        </header>
+        <div class="admin-login">
+          <label>
+            <span>手机号</span>
+            <input id="phoneInput" autocomplete="tel" placeholder="输入手机号" />
+          </label>
+          <label>
+            <span>邀请码</span>
+            <input id="inviteInput" autocomplete="off" placeholder="没有可先留空试用" />
+          </label>
+          <div class="auth-actions">
+            <button class="primary-button" id="registerBtn" type="button">登记 / 注册</button>
+            <button class="secondary-button" id="userLoginBtn" type="button">已有账号登录</button>
+          </div>
+          <p class="admin-hint" id="authHint">正式上线后可接短信验证码；当前版本先用手机号快速登记。</p>
+        </div>
+      </section>
+    </div>
+
     <div class="admin-modal" id="adminModal" aria-hidden="true">
       <div class="admin-backdrop" id="adminCloseBackdrop"></div>
       <section class="admin-dialog" role="dialog" aria-modal="true" aria-label="管理员后台">
@@ -358,6 +392,34 @@
                 <button class="secondary-button" type="submit">更新密码</button>
                 <p class="admin-hint" id="passwordHint">新密码至少 6 位。</p>
               </form>
+
+              <form class="admin-form" id="inviteForm">
+                <div class="section-title">
+                  <span>邀请码</span>
+                </div>
+                <label>
+                  <span>邀请码</span>
+                  <input id="adminInviteCode" autocomplete="off" placeholder="留空自动生成" />
+                </label>
+                <label>
+                  <span>可用次数</span>
+                  <input id="adminInviteMaxUses" type="number" min="1" value="30" />
+                </label>
+                <label>
+                  <span>每日 AI 上限</span>
+                  <input id="adminInviteDailyLimit" type="number" min="1" value="20" />
+                </label>
+                <button class="secondary-button" type="submit">创建邀请码</button>
+                <p class="admin-hint" id="inviteHint">邀请码用于学生登记。</p>
+                <div class="admin-recent" id="inviteList"></div>
+              </form>
+
+              <section class="admin-form">
+                <div class="section-title">
+                  <span>用户用量</span>
+                </div>
+                <div class="admin-recent" id="userUsageList"></div>
+              </section>
 
               <section class="admin-form">
                 <div class="section-title">

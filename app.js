@@ -120,6 +120,16 @@ const dom = {
   canvas: document.querySelector("#sceneCanvas"),
   labelLayer: document.querySelector("#labelLayer"),
   emptyState: document.querySelector("#emptyState"),
+  userOpenBtn: document.querySelector("#userOpenBtn"),
+  userEntryText: document.querySelector("#userEntryText"),
+  authModal: document.querySelector("#authModal"),
+  authCloseBtn: document.querySelector("#authCloseBtn"),
+  authCloseBackdrop: document.querySelector("#authCloseBackdrop"),
+  phoneInput: document.querySelector("#phoneInput"),
+  inviteInput: document.querySelector("#inviteInput"),
+  registerBtn: document.querySelector("#registerBtn"),
+  userLoginBtn: document.querySelector("#userLoginBtn"),
+  authHint: document.querySelector("#authHint"),
   adminOpenBtn: document.querySelector("#adminOpenBtn"),
   adminModal: document.querySelector("#adminModal"),
   adminCloseBtn: document.querySelector("#adminCloseBtn"),
@@ -146,6 +156,13 @@ const dom = {
   passwordHint: document.querySelector("#passwordHint"),
   refreshStatsBtn: document.querySelector("#refreshStatsBtn"),
   recentList: document.querySelector("#recentList"),
+  inviteForm: document.querySelector("#inviteForm"),
+  adminInviteCode: document.querySelector("#adminInviteCode"),
+  adminInviteMaxUses: document.querySelector("#adminInviteMaxUses"),
+  adminInviteDailyLimit: document.querySelector("#adminInviteDailyLimit"),
+  inviteHint: document.querySelector("#inviteHint"),
+  inviteList: document.querySelector("#inviteList"),
+  userUsageList: document.querySelector("#userUsageList"),
   statVisits: document.querySelector("#statVisits"),
   statGenerations: document.querySelector("#statGenerations"),
   statAi: document.querySelector("#statAi"),
@@ -171,6 +188,8 @@ const dom = {
 const state = {
   scene: null,
   camera: null,
+  perspectiveCamera: null,
+  orthographicCamera: null,
   renderer: null,
   controls: null,
   raycaster: new THREE.Raycaster(),
@@ -190,6 +209,8 @@ const state = {
   auxVisible: true,
   backendAvailable: false,
   adminToken: localStorage.getItem("geometry-space-admin-token") || "",
+  userToken: localStorage.getItem("geometry-space-user-token") || "",
+  currentUser: null,
   activeStep: "input",
   activeAssistMode: "",
   helpMode: false,
@@ -288,12 +309,18 @@ function initUI() {
   dom.askInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") askQuestion();
   });
+  dom.userOpenBtn.addEventListener("click", openAuthModal);
+  dom.authCloseBtn.addEventListener("click", closeAuthModal);
+  dom.authCloseBackdrop.addEventListener("click", closeAuthModal);
+  dom.registerBtn.addEventListener("click", () => submitAuth("register"));
+  dom.userLoginBtn.addEventListener("click", () => submitAuth("login"));
 
   dom.canvas.addEventListener("pointerdown", handlePointerDown);
   window.addEventListener("resize", resizeRenderer);
 
   initAdminUI();
   checkBackend();
+  loadCurrentUser();
   recordVisit();
   renderHelpPanel();
   renderHistory();
@@ -317,6 +344,7 @@ function initAdminUI() {
   dom.clearApiKeyBtn.addEventListener("click", clearApiKey);
   dom.passwordForm.addEventListener("submit", changeAdminPassword);
   dom.refreshStatsBtn.addEventListener("click", loadAdminDashboard);
+  dom.inviteForm.addEventListener("submit", createInvite);
 }
 
 function handleStepNavigation(step) {
@@ -369,6 +397,11 @@ function closeMobilePanel() {
 function setViewMode(mode, reset = true) {
   const nextMode = mode === "2d" ? "2d" : "3d";
   state.viewMode = nextMode;
+  state.camera = nextMode === "2d" ? state.orthographicCamera : state.perspectiveCamera;
+  if (state.controls) {
+    state.controls.object = state.camera;
+  }
+  updateCameraProjection();
   dom.viewModeButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.viewMode === nextMode);
   });
@@ -452,6 +485,9 @@ async function apiFetch(url, options = {}) {
     Accept: "application/json",
     ...(options.headers || {}),
   };
+  if (state.userToken && !headers.Authorization && !headers["X-User-Token"]) {
+    headers["X-User-Token"] = state.userToken;
+  }
   const request = {
     method: options.method || "GET",
     headers,
@@ -472,6 +508,65 @@ function adminHeaders() {
   return {
     Authorization: `Bearer ${state.adminToken}`,
   };
+}
+
+function openAuthModal() {
+  dom.authModal.classList.add("open");
+  dom.authModal.setAttribute("aria-hidden", "false");
+  dom.phoneInput.focus();
+}
+
+function closeAuthModal() {
+  dom.authModal.classList.remove("open");
+  dom.authModal.setAttribute("aria-hidden", "true");
+}
+
+async function submitAuth(mode) {
+  const phone = dom.phoneInput.value.trim();
+  if (!phone) {
+    dom.authHint.textContent = "请先输入手机号。";
+    return;
+  }
+  dom.authHint.textContent = mode === "register" ? "正在登记..." : "正在登录...";
+  try {
+    const data = await apiFetch(mode === "register" ? "/api/auth/register" : "/api/auth/login", {
+      method: "POST",
+      body: {
+        phone,
+        inviteCode: dom.inviteInput.value.trim(),
+      },
+    });
+    state.userToken = data.token;
+    state.currentUser = data.user;
+    localStorage.setItem("geometry-space-user-token", state.userToken);
+    renderCurrentUser();
+    closeAuthModal();
+    setStatus("已登录，做题记录会计入当前账号");
+  } catch (error) {
+    dom.authHint.textContent = error.message;
+  }
+}
+
+async function loadCurrentUser() {
+  if (!state.userToken) {
+    renderCurrentUser();
+    return;
+  }
+  try {
+    const data = await apiFetch("/api/auth/me");
+    state.currentUser = data.user || null;
+    if (!state.currentUser) {
+      state.userToken = "";
+      localStorage.removeItem("geometry-space-user-token");
+    }
+  } catch {
+    state.currentUser = null;
+  }
+  renderCurrentUser();
+}
+
+function renderCurrentUser() {
+  dom.userEntryText.textContent = state.currentUser?.phone ? state.currentUser.phone.slice(-4) : "登录";
 }
 
 function openAdminModal() {
@@ -516,6 +611,7 @@ async function adminLogin() {
     showAdminBoard();
     fillAdminConfig(data.config);
     renderStats(data.stats);
+    loadAdminDashboard().catch(() => {});
     dom.adminLoginHint.textContent = "登录成功";
   } catch (error) {
     showAdminLogin(error.message);
@@ -523,13 +619,17 @@ async function adminLogin() {
 }
 
 async function loadAdminDashboard() {
-  const [configData, statsData] = await Promise.all([
+  const [configData, statsData, invitesData, usersData] = await Promise.all([
     apiFetch("/api/admin/config", { headers: adminHeaders() }),
     apiFetch("/api/admin/stats", { headers: adminHeaders() }),
+    apiFetch("/api/admin/invites", { headers: adminHeaders() }).catch(() => ({ invites: [] })),
+    apiFetch("/api/admin/users", { headers: adminHeaders() }).catch(() => ({ users: [] })),
   ]);
   showAdminBoard();
   fillAdminConfig(configData.config);
   renderStats(statsData.stats);
+  renderInvites(invitesData.invites || []);
+  renderUserUsage(usersData.users || []);
   window.lucide?.createIcons();
 }
 
@@ -633,6 +733,64 @@ async function changeAdminPassword(event) {
   } catch (error) {
     dom.passwordHint.textContent = error.message;
   }
+}
+
+async function createInvite(event) {
+  event.preventDefault();
+  dom.inviteHint.textContent = "正在创建...";
+  try {
+    const data = await apiFetch("/api/admin/invites", {
+      method: "POST",
+      headers: adminHeaders(),
+      body: {
+        code: dom.adminInviteCode.value.trim(),
+        maxUses: Number(dom.adminInviteMaxUses.value || 30),
+        dailyAiLimit: Number(dom.adminInviteDailyLimit.value || 20),
+      },
+    });
+    dom.adminInviteCode.value = "";
+    dom.inviteHint.textContent = `已创建：${data.invite.code}`;
+    await loadAdminDashboard();
+  } catch (error) {
+    dom.inviteHint.textContent = error.message;
+  }
+}
+
+function renderInvites(invites) {
+  if (!invites.length) {
+    dom.inviteList.innerHTML = '<div class="recent-item"><span>暂无邀请码</span></div>';
+    return;
+  }
+  dom.inviteList.innerHTML = invites
+    .slice(0, 10)
+    .map(
+      (item) => `
+        <div class="recent-item">
+          <strong>${escapeHtml(item.code)}</strong>
+          <span>已用 ${item.usedCount || 0}/${item.maxUses || 0} · 每日 AI ${item.dailyAiLimit || 0}</span>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function renderUserUsage(users) {
+  if (!users.length) {
+    dom.userUsageList.innerHTML = '<div class="recent-item"><span>暂无用户</span></div>';
+    return;
+  }
+  dom.userUsageList.innerHTML = users
+    .slice(0, 20)
+    .map(
+      (user) => `
+        <div class="recent-item">
+          <strong>${escapeHtml(user.phone || "")}</strong>
+          <span>生成 ${user.usage?.generations || 0} · AI ${user.usage?.aiRequests || 0} / ${user.dailyAiLimit || 0}</span>
+          <span>${escapeHtml(user.inviteCode || "无邀请码")}</span>
+        </div>
+      `,
+    )
+    .join("");
 }
 
 function updateProblemHints(text, extraMessage = "") {
@@ -1000,9 +1158,13 @@ function initScene() {
   state.scene = new THREE.Scene();
   state.scene.background = new THREE.Color(0xf0f4f2);
 
-  state.camera = new THREE.PerspectiveCamera(46, 1, 0.1, 1000);
-  state.camera.up.set(0, 0, 1);
-  state.camera.position.set(4, -6, 4);
+  state.perspectiveCamera = new THREE.PerspectiveCamera(46, 1, 0.1, 1000);
+  state.perspectiveCamera.up.set(0, 0, 1);
+  state.perspectiveCamera.position.set(4, -6, 4);
+  state.orthographicCamera = new THREE.OrthographicCamera(-4, 4, 4, -4, 0.1, 1000);
+  state.orthographicCamera.up.set(0, 1, 0);
+  state.orthographicCamera.position.set(0, 0, 8);
+  state.camera = state.perspectiveCamera;
 
   state.renderer = new THREE.WebGLRenderer({
     canvas: dom.canvas,
@@ -1484,6 +1646,56 @@ function addRelation(model, text) {
   model.relations.push(text);
 }
 
+function selectModelMeasurement() {
+  if (!state.currentModel) return;
+  state.interactiveObjects.forEach((object) => setHighlight(object, false));
+  const metrics = computeModelMetrics(state.currentModel);
+  const parts = [`总表面积 ${formatNumber(metrics.totalFaceArea)}`];
+  if (metrics.volume > 0) parts.push(`体积 ${formatNumber(metrics.volume)}`);
+  else parts.push("平面图形体积为 0");
+  dom.selectedBox.innerHTML = `<strong>${state.currentModel.title}</strong><span>${parts.join("，")}。</span>`;
+  setActiveStep("inspect");
+  if (window.matchMedia("(max-width: 820px)").matches) setMobilePanel("info");
+}
+
+function computeModelMetrics(model) {
+  const totalFaceArea = (model.faces || []).reduce((sum, face) => sum + computeFaceArea(model, face), 0);
+  return {
+    totalFaceArea,
+    volume: computeModelVolume(model),
+  };
+}
+
+function computeFaceArea(model, face) {
+  const points = (face.vertices || []).map((label) => model.points[label]?.position).filter(Boolean);
+  if (points.length < 3) return 0;
+  const origin = toVector3(points[0]);
+  let area = 0;
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const a = toVector3(points[index]).sub(origin);
+    const b = toVector3(points[index + 1]).sub(origin);
+    area += a.cross(b).length() / 2;
+  }
+  return area;
+}
+
+function computeModelVolume(model) {
+  if (!model || model.type === "triangle") return 0;
+  if (model.type === "cube" || model.type === "cuboid") {
+    const bounds = computeBounds(model);
+    return bounds.size.x * bounds.size.y * bounds.size.z;
+  }
+  if (model.type === "tri-pyramid" || model.type === "square-pyramid") {
+    const baseFace = model.faces.find((face) => face.vertices.every((label) => Math.abs(model.points[label].position.z - model.points[face.vertices[0]].position.z) < 0.001));
+    if (!baseFace) return 0;
+    const baseArea = computeFaceArea(model, baseFace);
+    const baseZ = model.points[baseFace.vertices[0]].position.z;
+    const apex = Object.values(model.points).reduce((top, point) => (point.position.z > top.position.z ? point : top), Object.values(model.points)[0]);
+    return (baseArea * Math.abs(apex.position.z - baseZ)) / 3;
+  }
+  return 0;
+}
+
 function buildModelEquations(model) {
   if (!model || !Object.keys(model.points || {}).length) return [];
   const bounds = computeBounds(model);
@@ -1610,6 +1822,7 @@ function renderModel(model) {
 
 function renderFace(model, face, index) {
   const positions = face.vertices.map((label) => model.points[label].position);
+  const area = computeFaceArea(model, face);
   const geometry = new THREE.BufferGeometry();
   const vertices = [];
 
@@ -1639,7 +1852,7 @@ function renderFace(model, face, index) {
     elementId: face.id,
     type: "face",
     label: face.label,
-    detail: `${face.label}，由 ${face.vertices.join("、")} 构成。`,
+    detail: `${face.label}，由 ${face.vertices.join("、")} 构成，面积 ${formatNumber(area)}。`,
     baseColor: material.color.clone(),
     baseOpacity: material.opacity,
   };
@@ -1781,7 +1994,14 @@ function renderModelInfo(model) {
 }
 
 function renderElementList(model) {
+  const metrics = computeModelMetrics(model);
   const items = [
+    {
+      id: "measure:model",
+      label: metrics.volume > 0 ? "整体体积" : "整体面积",
+      meta: metrics.volume > 0 ? `体积 ${formatNumber(metrics.volume)}` : `面积 ${formatNumber(metrics.totalFaceArea)}`,
+      type: "measure",
+    },
     ...Object.values(model.points).map((point) => ({
       id: point.id,
       label: `点 ${point.label}`,
@@ -1797,7 +2017,7 @@ function renderElementList(model) {
     ...model.faces.map((face) => ({
       id: face.id,
       label: face.label,
-      meta: "平面",
+      meta: `面积 ${formatNumber(computeFaceArea(model, face))}`,
       type: "face",
     })),
   ];
@@ -1829,6 +2049,11 @@ function handlePointerDown(event) {
 }
 
 function selectElement(elementId) {
+  if (elementId === "measure:model") {
+    selectModelMeasurement();
+    return;
+  }
+
   const objects = state.interactiveObjects.filter((object) => object.userData.elementId === elementId);
   if (!objects.length) return;
 
@@ -1937,13 +2162,16 @@ function resetCameraToModel() {
     (bounds.min.z + bounds.max.z) / 2,
   );
   const maxSize = Math.max(bounds.size.x, bounds.size.y, bounds.size.z, 1);
+  updateCameraProjection(maxSize);
 
   if (state.viewMode === "2d") {
-    state.camera.up.set(0, 1, 0);
-    state.camera.position.set(center.x, center.y, center.z + maxSize * 2.8);
+    state.orthographicCamera.up.set(0, 1, 0);
+    state.orthographicCamera.position.set(center.x, center.y, center.z + maxSize * 3);
+    state.orthographicCamera.lookAt(center);
   } else {
-    state.camera.up.set(0, 0, 1);
-    state.camera.position.set(center.x + maxSize * 1.6, center.y - maxSize * 2.1, center.z + maxSize * 1.35);
+    state.perspectiveCamera.up.set(0, 0, 1);
+    state.perspectiveCamera.position.set(center.x + maxSize * 1.6, center.y - maxSize * 2.1, center.z + maxSize * 1.35);
+    state.perspectiveCamera.lookAt(center);
   }
 
   state.controls.target.copy(center);
@@ -2019,8 +2247,27 @@ function resizeRenderer() {
   const width = Math.max(dom.sceneWrap.clientWidth, 320);
   const height = Math.max(dom.sceneWrap.clientHeight, 360);
   state.renderer.setSize(width, height, false);
-  state.camera.aspect = width / height;
-  state.camera.updateProjectionMatrix();
+  updateCameraProjection();
+}
+
+function updateCameraProjection(modelSize = null) {
+  const width = Math.max(dom.sceneWrap.clientWidth || 320, 320);
+  const height = Math.max(dom.sceneWrap.clientHeight || 360, 360);
+  const aspect = width / height;
+  if (state.perspectiveCamera) {
+    state.perspectiveCamera.aspect = aspect;
+    state.perspectiveCamera.updateProjectionMatrix();
+  }
+  if (state.orthographicCamera) {
+    const size = Math.max(modelSize || Math.max(state.currentBounds?.size.x || 2, state.currentBounds?.size.y || 2, 2), 2) * 1.55;
+    state.orthographicCamera.left = (-size * aspect) / 2;
+    state.orthographicCamera.right = (size * aspect) / 2;
+    state.orthographicCamera.top = size / 2;
+    state.orthographicCamera.bottom = -size / 2;
+    state.orthographicCamera.near = 0.1;
+    state.orthographicCamera.far = 1000;
+    state.orthographicCamera.updateProjectionMatrix();
+  }
 }
 
 function animate() {

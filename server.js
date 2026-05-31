@@ -10,6 +10,7 @@ const DATA_DIR = path.join(ROOT, "data");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
 
 const sessions = new Map();
+const userSessions = new Map();
 
 const defaultPrompt = `你是一个严谨的初高中几何题结构化解析器。
 请把题目转成一个可直接渲染的 JSON，必须只输出 JSON，不要 Markdown。
@@ -58,6 +59,8 @@ const defaultState = {
     daily: {},
     recent: [],
   },
+  users: [],
+  invites: [],
 };
 
 function hashPassword(password) {
@@ -181,6 +184,12 @@ function createSession() {
   return token;
 }
 
+function createUserSession(userId) {
+  const token = crypto.randomBytes(24).toString("hex");
+  userSessions.set(token, { userId, expires: Date.now() + 1000 * 60 * 60 * 24 * 30 });
+  return token;
+}
+
 function getAuth(req) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : "";
@@ -199,6 +208,36 @@ function requireAdmin(req, res) {
     return null;
   }
   return token;
+}
+
+function getUserSession(req) {
+  const token = req.headers?.["x-user-token"] || "";
+  const session = userSessions.get(token);
+  if (!session || session.expires < Date.now()) {
+    if (token) userSessions.delete(token);
+    return null;
+  }
+  return session;
+}
+
+function publicUser(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    phone: user.phone,
+    role: user.role || "student",
+    plan: user.plan || "trial",
+    dailyAiLimit: user.dailyAiLimit || 20,
+    monthlyTokenLimit: user.monthlyTokenLimit || 100000,
+    createdAt: user.createdAt,
+  };
+}
+
+function getUserUsage(stats, userId) {
+  const daily = getDaily(stats);
+  daily.users ||= {};
+  daily.users[userId] ||= { generations: 0, aiRequests: 0, tokens: 0 };
+  return daily.users[userId];
 }
 
 function routeStatic(req, res, pathname) {
@@ -246,8 +285,13 @@ async function handleApi(req, res, pathname) {
       const body = await readBody(req);
       const state = readState();
       const daily = getDaily(state.stats);
+      const session = getUserSession(req);
       state.stats.totalGenerations += 1;
       daily.generations += 1;
+      if (session) {
+        const userUsage = getUserUsage(state.stats, session.userId);
+        userUsage.generations += 1;
+      }
       if (body.source === "local" && body.success) {
         state.stats.localSuccess += 1;
         daily.localSuccess += 1;
@@ -263,9 +307,55 @@ async function handleApi(req, res, pathname) {
       return json(res, 200, { ok: true });
     }
 
+    if (req.method === "POST" && pathname === "/api/auth/register") {
+      const body = await readBody(req);
+      const state = readState();
+      const phone = normalizePhone(body.phone);
+      if (!phone) return json(res, 400, { ok: false, error: "请输入手机号" });
+      let user = state.users.find((item) => item.phone === phone);
+      if (!user) {
+        const inviteCode = String(body.inviteCode || "").trim();
+        const invite = inviteCode ? state.invites.find((item) => item.code === inviteCode) : null;
+        if (inviteCode && !invite) return json(res, 400, { ok: false, error: "邀请码不存在" });
+        if (invite && invite.maxUses && invite.usedCount >= invite.maxUses) return json(res, 400, { ok: false, error: "邀请码已用完" });
+        user = {
+          id: crypto.randomUUID(),
+          phone,
+          role: "student",
+          inviteCode,
+          plan: invite?.plan || "trial",
+          dailyAiLimit: invite?.dailyAiLimit || 20,
+          monthlyTokenLimit: invite?.monthlyTokenLimit || 100000,
+          createdAt: new Date().toISOString(),
+        };
+        state.users.push(user);
+        if (invite) invite.usedCount += 1;
+        writeState(state);
+      }
+      const token = createUserSession(user.id);
+      return json(res, 200, { ok: true, token, user: publicUser(user) });
+    }
+
+    if (req.method === "POST" && pathname === "/api/auth/login") {
+      const body = await readBody(req);
+      const state = readState();
+      const phone = normalizePhone(body.phone);
+      const user = state.users.find((item) => item.phone === phone);
+      if (!user) return json(res, 404, { ok: false, error: "手机号还未登记，请先登记" });
+      const token = createUserSession(user.id);
+      return json(res, 200, { ok: true, token, user: publicUser(user) });
+    }
+
+    if (req.method === "GET" && pathname === "/api/auth/me") {
+      const session = getUserSession(req);
+      if (!session) return json(res, 200, { ok: true, user: null });
+      const state = readState();
+      return json(res, 200, { ok: true, user: publicUser(state.users.find((item) => item.id === session.userId)) });
+    }
+
     if (req.method === "POST" && pathname === "/api/parse") {
       const body = await readBody(req);
-      return await parseWithAi(res, body);
+      return await parseWithAi(req, res, body);
     }
 
     if (req.method === "POST" && pathname === "/api/tips") {
@@ -333,6 +423,44 @@ async function handleApi(req, res, pathname) {
       return json(res, 200, { ok: true, stats: buildStats(state) });
     }
 
+    if (req.method === "GET" && pathname === "/api/admin/invites") {
+      const state = readState();
+      return json(res, 200, { ok: true, invites: state.invites || [] });
+    }
+
+    if (req.method === "POST" && pathname === "/api/admin/invites") {
+      const body = await readBody(req);
+      const state = readState();
+      const code = String(body.code || "").trim().toUpperCase() || `GEO-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+      if (state.invites.some((item) => item.code === code)) return json(res, 400, { ok: false, error: "邀请码已存在" });
+      const invite = {
+        id: crypto.randomUUID(),
+        code,
+        maxUses: clampInteger(body.maxUses, 1, 100000, 30),
+        usedCount: 0,
+        plan: String(body.plan || "trial"),
+        dailyAiLimit: clampInteger(body.dailyAiLimit, 1, 100000, 20),
+        monthlyTokenLimit: clampInteger(body.monthlyTokenLimit, 1000, 100000000, 100000),
+        createdAt: new Date().toISOString(),
+      };
+      state.invites.unshift(invite);
+      writeState(state);
+      return json(res, 200, { ok: true, invite });
+    }
+
+    if (req.method === "GET" && pathname === "/api/admin/users") {
+      const state = readState();
+      const daily = getDaily(state.stats);
+      return json(res, 200, {
+        ok: true,
+        users: (state.users || []).map((user) => ({
+          ...publicUser(user),
+          usage: daily.users?.[user.id] || { generations: 0, aiRequests: 0, tokens: 0 },
+          inviteCode: user.inviteCode || "",
+        })),
+      });
+    }
+
     if (req.method === "POST" && pathname === "/api/admin/logout") {
       const token = getAuth(req);
       if (token) sessions.delete(token);
@@ -367,14 +495,21 @@ function buildStats(state) {
   };
 }
 
-async function parseWithAi(res, body) {
+function normalizePhone(value) {
+  const phone = String(value || "").replace(/[^\d+]/g, "");
+  return phone.length >= 6 ? phone.slice(0, 24) : "";
+}
+
+async function parseWithAi(req, res, body) {
   const problemText = String(body.text || "").trim();
   if (!problemText) return json(res, 400, { ok: false, error: "题目不能为空" });
 
   const state = readState();
   const daily = getDaily(state.stats);
+  const session = getUserSession(req);
   state.stats.totalGenerations += 1;
   daily.generations += 1;
+  if (session) getUserUsage(state.stats, session.userId).generations += 1;
 
   if (!state.config.aiEnabled) {
     recordRecent(state.stats, { source: "ai", status: "failure", text: problemText, error: "AI 解析未启用" });
@@ -397,6 +532,7 @@ async function parseWithAi(res, body) {
   const start = Date.now();
   state.stats.aiRequests += 1;
   daily.aiRequests += 1;
+  if (session) getUserUsage(state.stats, session.userId).aiRequests += 1;
   writeState(state);
 
   try {

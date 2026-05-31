@@ -158,7 +158,8 @@ button {
   color: #fff;
 }
 
-.admin-entry {
+.admin-entry,
+.user-entry {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -172,9 +173,15 @@ button {
   font-weight: 800;
 }
 
-.admin-entry svg {
+.admin-entry svg,
+.user-entry svg {
   width: 16px;
   height: 16px;
+}
+
+.user-entry {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 .workspace {
@@ -818,6 +825,10 @@ button {
   background: var(--warm);
 }
 
+.type-measure {
+  background: var(--accent);
+}
+
 .mobile-nav {
   display: none;
 }
@@ -1015,14 +1026,16 @@ button {
   pointer-events: none;
 }
 
-.admin-modal {
+.admin-modal,
+.auth-modal {
   position: fixed;
   inset: 0;
   z-index: 40;
   display: none;
 }
 
-.admin-modal.open {
+.admin-modal.open,
+.auth-modal.open {
   display: block;
 }
 
@@ -1046,6 +1059,25 @@ button {
   border-radius: 8px;
   background: var(--surface);
   box-shadow: 0 24px 70px rgba(14, 22, 28, 0.28);
+}
+
+.auth-dialog {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(420px, calc(100vw - 28px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(14, 22, 28, 0.28);
+  transform: translate(-50%, -50%);
+}
+
+.auth-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .admin-header {
@@ -1302,6 +1334,15 @@ button {
     grid-row: 1;
     min-height: 36px;
     padding: 0 10px;
+  }
+
+  .user-entry {
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 36px;
+    max-width: 82px;
+    padding: 0 9px;
+    transform: translateY(42px);
   }
 
   .step-rail {
