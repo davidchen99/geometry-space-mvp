@@ -56,24 +56,34 @@ const historyKey = "geometry-space-problem-history";
 
 const helpItems = [
   {
+    title: "读题型",
+    text: "先看题目是平面题还是空间题。",
+    detail: "三角形、圆、轨迹多用 2D；正方体、长方体、棱锥多用 3D。",
+  },
+  {
+    title: "找点线面",
+    text: "确认题目给了哪些点、边、面。",
+    detail: "点名不够时，系统会提醒补 A、B、C、P、A1 这类标记。",
+  },
+  {
+    title: "看已知条件",
+    text: "长度、垂直、平行、中点会影响模型。",
+    detail: "缺长度时可先用默认尺寸；想更准确就写 AB=2 或边长为2。",
+  },
+  {
     title: "生成图形",
-    text: "把题目写清楚：图形名称、点名、长度、垂直/平行/中点、需要连接的线。",
+    text: "点生成后先看整体结构。",
+    detail: "2D 适合看平面关系，3D 适合看空间位置。",
   },
   {
-    title: "看三维模型",
-    text: "拖动旋转，滚轮缩放。手机上单指旋转，双指缩放。",
+    title: "点元素检查",
+    text: "点击点、线、面，看坐标、长度和关系。",
+    detail: "需要解释时点“步骤”或“问答”，不要在主界面硬看太多字。",
   },
   {
-    title: "点击元素",
-    text: "点、线、面都能点击。右侧会显示当前元素和长度、坐标等信息。",
-  },
-  {
-    title: "测距",
-    text: "点尺子图标后，依次点击两个点，会显示两点距离。",
-  },
-  {
-    title: "题目不会写",
-    text: "点 Tips 或 Help。系统会提示缺少图形、点名、长度或关系。",
+    title: "不会写题目",
+    text: "点 Tips 选择规范表达。",
+    detail: "圆、轨迹、球、圆锥这类题优先尝试 2D 或 AI 解析。",
   },
 ];
 
@@ -97,6 +107,10 @@ const dom = {
   selectedBox: document.querySelector("#selectedBox"),
   parseBadge: document.querySelector("#parseBadge"),
   statusText: document.querySelector("#statusText"),
+  viewModeLabel: document.querySelector("#viewModeLabel"),
+  view2dBtn: document.querySelector("#view2dBtn"),
+  view3dBtn: document.querySelector("#view3dBtn"),
+  viewModeButtons: Array.from(document.querySelectorAll("[data-view-mode]")),
   resetViewBtn: document.querySelector("#resetViewBtn"),
   gridBtn: document.querySelector("#gridBtn"),
   auxBtn: document.querySelector("#auxBtn"),
@@ -179,6 +193,8 @@ const state = {
   activeStep: "input",
   activeAssistMode: "",
   helpMode: false,
+  viewMode: "3d",
+  pendingViewMode: "",
 };
 
 const colors = {
@@ -253,6 +269,9 @@ function initUI() {
   });
   dom.measureBtn.addEventListener("click", toggleMeasureMode);
   dom.screenshotBtn.addEventListener("click", exportScreenshot);
+  dom.viewModeButtons.forEach((button) => {
+    button.addEventListener("click", () => setViewMode(button.dataset.viewMode, true));
+  });
 
   dom.stepButtons.forEach((button) => {
     button.addEventListener("click", () => handleStepNavigation(button.dataset.step));
@@ -345,6 +364,34 @@ function closeMobilePanel() {
   if (window.matchMedia("(max-width: 820px)").matches) {
     setMobilePanel("none");
   }
+}
+
+function setViewMode(mode, reset = true) {
+  const nextMode = mode === "2d" ? "2d" : "3d";
+  state.viewMode = nextMode;
+  dom.viewModeButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.viewMode === nextMode);
+  });
+  dom.viewModeLabel.textContent = nextMode === "2d" ? "二维视图" : "三维视图";
+  if (state.controls) {
+    state.controls.enableRotate = nextMode !== "2d";
+    state.controls.screenSpacePanning = nextMode === "2d";
+  }
+  if (reset) resetCameraToModel();
+  setStatus(nextMode === "2d" ? "已切换到 2D 平面视图" : "已切换到 3D 空间视图");
+}
+
+function inferViewModeFromText(text) {
+  const clean = normalizeText(text || "");
+  if (/(圆|椭圆|抛物线|双曲线|轨迹|动点|三角形|△)/.test(clean)) return "2d";
+  return "3d";
+}
+
+function inferViewModeFromModel(model) {
+  if (!model) return "3d";
+  if (model.type === "triangle") return "2d";
+  const bounds = computeBounds(model);
+  return bounds.size.z < 0.2 ? "2d" : "3d";
 }
 
 async function checkBackend() {
@@ -611,7 +658,19 @@ function analyzeProblemText(text) {
   const hints = [];
   if (!clean) return hints;
 
-  if (!/(正方体|长方体|三棱锥|四棱锥|正四棱锥|三角形|△)/.test(clean)) {
+  const hasSupportedType = /(正方体|长方体|三棱锥|四棱锥|正四棱锥|三角形|△)/.test(clean);
+  const hasCurveType = /(圆|椭圆|抛物线|双曲线|轨迹|动点)/.test(clean);
+  const hasRoundSolidType = /(球|圆锥|圆柱)/.test(clean);
+
+  if (hasCurveType) {
+    hints.push({ level: "info", text: "检测到圆类或轨迹题，建议先用 2D 平面视图；本地规则不够时会尝试 AI 解析。" });
+  }
+
+  if (hasRoundSolidType) {
+    hints.push({ level: "warn", text: "检测到球、圆锥或圆柱，这类空间曲面题本地规则暂不稳定，建议使用 AI 解析。" });
+  }
+
+  if (!hasSupportedType && !hasCurveType && !hasRoundSolidType) {
     hints.push({ level: "warn", text: "题目里最好先写清图形类型，例如正方体、长方体、三棱锥或三角形。" });
   }
 
@@ -620,17 +679,17 @@ function analyzeProblemText(text) {
     hints.push({ level: "warn", text: "点名偏少，建议写出 A、B、C、P、A1 这类顶点标记。" });
   }
 
-  if (!/(边长|棱长|底边长|=|为)\d/.test(clean)) {
-    hints.push({ level: "info", text: "没有看到长度，系统会用默认尺寸；想更准确可以写 AB=2 或边长为2。" });
+  if (!/(边长|棱长|底边长|半径|直径|=|为)\d/.test(clean)) {
+    hints.push({
+      level: "info",
+      text: hasCurveType
+        ? "没有看到半径、直径或动点范围；想更准确可以写 半径为2 或 P在圆O上运动。"
+        : "没有看到长度，系统会用默认尺寸；想更准确可以写 AB=2 或边长为2。",
+    });
   }
 
   if (!/(连接|连结|中点|交点|重心|垂直|平行|⊥|\/\/)/.test(clean)) {
     hints.push({ level: "info", text: "可以补充中点、垂直、平行或连接线，模型会更贴近题意。" });
-  }
-
-  const unsupported = clean.match(/圆|椭圆|抛物线|双曲线|球|圆锥|圆柱/);
-  if (unsupported) {
-    hints.unshift({ level: "warn", text: `当前本地规则暂不稳定支持“${unsupported[0]}”，建议点 Tips 或让 AI 解析。` });
   }
 
   return hints;
@@ -678,14 +737,17 @@ function toggleHelpMode(active = !state.helpMode) {
 
 function renderHelpPanel() {
   dom.helpList.innerHTML = helpItems
-    .map(
-      (item) => `
-        <article class="help-item">
+    .map((item, index) => {
+      const isOpen = index === 0 ? " open" : "";
+      return `
+        <article class="help-item${isOpen}">
+          <span class="help-step">${index + 1}</span>
           <strong>${escapeHtml(item.title)}</strong>
           <span>${escapeHtml(item.text)}</span>
+          <small>${escapeHtml(item.detail || "")}</small>
         </article>
-      `,
-    )
+      `;
+    })
     .join("");
 }
 
@@ -1016,6 +1078,7 @@ async function generateModel() {
   }
 
   updateProblemHints(text);
+  state.pendingViewMode = inferViewModeFromText(text);
   setLoading(true);
   setActiveStep("parse");
   setStatus("正在解析题目...");
@@ -1537,6 +1600,8 @@ function renderModel(model) {
 
   renderModelInfo(model);
   renderElementList(model);
+  setViewMode(state.pendingViewMode || inferViewModeFromModel(model), false);
+  state.pendingViewMode = "";
   resetCameraToModel();
   dom.emptyState.classList.add("hide");
   setActiveStep("model");
@@ -1861,15 +1926,26 @@ function applyAuxVisibility() {
 }
 
 function resetCameraToModel() {
-  if (!state.currentBounds) return;
-  const bounds = state.currentBounds;
+  const bounds = state.currentBounds || {
+    min: { x: -1, y: -1, z: 0 },
+    max: { x: 1, y: 1, z: 1 },
+    size: { x: 2, y: 2, z: 1 },
+  };
   const center = new THREE.Vector3(
     (bounds.min.x + bounds.max.x) / 2,
     (bounds.min.y + bounds.max.y) / 2,
     (bounds.min.z + bounds.max.z) / 2,
   );
   const maxSize = Math.max(bounds.size.x, bounds.size.y, bounds.size.z, 1);
-  state.camera.position.set(center.x + maxSize * 1.6, center.y - maxSize * 2.1, center.z + maxSize * 1.35);
+
+  if (state.viewMode === "2d") {
+    state.camera.up.set(0, 1, 0);
+    state.camera.position.set(center.x, center.y, center.z + maxSize * 2.8);
+  } else {
+    state.camera.up.set(0, 0, 1);
+    state.camera.position.set(center.x + maxSize * 1.6, center.y - maxSize * 2.1, center.z + maxSize * 1.35);
+  }
+
   state.controls.target.copy(center);
   state.controls.update();
 }

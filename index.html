@@ -104,13 +104,17 @@
           <div class="viewer-header">
             <div class="viewer-label">
               <span class="eyebrow">模型</span>
-              <strong>三维视图</strong>
+              <strong id="viewModeLabel">三维视图</strong>
             </div>
             <div class="concept-map" aria-label="当前概念位置">
               <span class="concept-step active" data-concept="input">读题</span>
               <span class="concept-step" data-concept="parse">抽结构</span>
               <span class="concept-step" data-concept="model">成图</span>
               <span class="concept-step" data-concept="inspect">看元素</span>
+            </div>
+            <div class="view-toggle" aria-label="视图切换" data-help="平面题用 2D 看关系，空间题用 3D 看结构。">
+              <button class="view-toggle-btn" id="view2dBtn" type="button" data-view-mode="2d">2D</button>
+              <button class="view-toggle-btn active" id="view3dBtn" type="button" data-view-mode="3d">3D</button>
             </div>
           </div>
 
