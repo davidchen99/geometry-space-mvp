@@ -1,0 +1,37 @@
+# 更新日志
+
+本文件记录对使用、部署、运维或后续开发有影响的变化。细小代码差异以 Git 历史为准。
+
+## 2026-05-31 - v0.2.0
+
+### 新增
+
+- 增加学生登记 / 登录流程，支持用户名、手机号和可选邀请码。
+- 增加管理员邀请码管理，可设置最大使用次数和学生每日 AI 调用额度。
+- 增加后台学生用量列表，区分总生成、AI 调用和 token 统计。
+- 增加选择题识别，支持按 A、B、C、D 选项分别生成并缓存模型。
+- 增加复杂题理解确认面板，生成前展示题型、关系、视图模式和简略预览。
+- 增加 2D 解析几何模型：圆、椭圆、抛物线、双曲线、直线、轨迹 / 动点示意。
+- 增加 Help 模式、步骤面板、问答面板和题目 Tips。
+- 增加元素点击高亮、测距、辅助线开关、PNG 导出和手机端底部导航。
+- 增加 Cloudflare Pages + Worker + D1 部署代码和数据库表结构。
+
+### 变更
+
+- 本地规则优先解析常见几何题，规则无法识别时再调用 DeepSeek，降低 API 暴露和调用成本。
+- 管理后台可配置 DeepSeek endpoint、模型、提示词模板、每日 AI 调用上限和 AI 启用状态。
+- DeepSeek API Key 仅保存在后端：本地 Node 版本写入 `data/state.json`，Cloudflare 版本写入 D1 settings 或环境变量。
+- README 改为面向接手者的功能、运行、接口、数据和部署说明。
+
+### 数据说明
+
+- 浏览器题目历史只保存在本机 `localStorage`，键名为 `geometry-space-problem-history`，最多保存 30 条。
+- 本地 Node 后端使用 `data/state.json` 存储管理员配置、统计、用户和邀请码。
+- Cloudflare 后端使用 D1 表：`users`、`invites`、`sessions`、`settings`、`usage_events`、`daily_usage`。
+
+### 注意事项
+
+- 公网部署后必须修改默认管理员密码 `123456`。
+- Cloudflare 部署前必须先应用 `cloudflare/schema.sql`。
+- 页面依赖外部 CDN 加载 Three.js 和 lucide 图标，离线环境需要改成本地资源。
+- Cloudflare Worker 版本已经记录 D1 用量和额度字段；付费公网版本上线前，需要确认是否按 `dailyLimit` / `dailyAiLimit` 做硬性拦截。
