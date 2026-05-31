@@ -224,6 +224,7 @@ function publicUser(user) {
   if (!user) return null;
   return {
     id: user.id,
+    username: user.username || "",
     phone: user.phone,
     role: user.role || "student",
     plan: user.plan || "trial",
@@ -311,7 +312,9 @@ async function handleApi(req, res, pathname) {
       const body = await readBody(req);
       const state = readState();
       const phone = normalizePhone(body.phone);
+      const username = normalizeUsername(body.username);
       if (!phone) return json(res, 400, { ok: false, error: "请输入手机号" });
+      if (!username) return json(res, 400, { ok: false, error: "请输入用户名" });
       let user = state.users.find((item) => item.phone === phone);
       if (!user) {
         const inviteCode = String(body.inviteCode || "").trim();
@@ -320,6 +323,7 @@ async function handleApi(req, res, pathname) {
         if (invite && invite.maxUses && invite.usedCount >= invite.maxUses) return json(res, 400, { ok: false, error: "邀请码已用完" });
         user = {
           id: crypto.randomUUID(),
+          username,
           phone,
           role: "student",
           inviteCode,
@@ -330,6 +334,9 @@ async function handleApi(req, res, pathname) {
         };
         state.users.push(user);
         if (invite) invite.usedCount += 1;
+        writeState(state);
+      } else if (username && user.username !== username) {
+        user.username = username;
         writeState(state);
       }
       const token = createUserSession(user.id);
@@ -498,6 +505,10 @@ function buildStats(state) {
 function normalizePhone(value) {
   const phone = String(value || "").replace(/[^\d+]/g, "");
   return phone.length >= 6 ? phone.slice(0, 24) : "";
+}
+
+function normalizeUsername(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 32);
 }
 
 async function parseWithAi(req, res, body) {

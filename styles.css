@@ -209,6 +209,7 @@ button {
 
 .problem-card,
 .choice-panel,
+.review-panel,
 .samples,
 .tips-panel,
 .parse-panel,
@@ -221,6 +222,7 @@ button {
 
 .problem-card,
 .choice-panel,
+.review-panel,
 .samples,
 .tips-panel,
 .parse-panel,
@@ -487,6 +489,49 @@ button {
   color: #fff;
 }
 
+.review-content {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.review-brief,
+.review-preview {
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: #354250;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.review-grid {
+  display: grid;
+  gap: 7px;
+}
+
+.review-grid span {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f7fbff;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.review-grid strong {
+  color: var(--ink);
+}
+
+.review-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .parse-badge {
   padding: 4px 8px;
   border-radius: 999px;
@@ -745,6 +790,40 @@ button {
   user-select: none;
 }
 
+.info-label {
+  position: absolute;
+  min-height: 28px;
+  max-width: min(260px, 72vw);
+  display: grid;
+  place-items: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 143, 140, 0.32);
+  background: rgba(255, 255, 255, 0.96);
+  color: #20313f;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  box-shadow: 0 12px 32px rgba(14, 22, 28, 0.2);
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 12px));
+}
+
+.info-label::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 10px;
+  height: 10px;
+  border-right: 1px solid rgba(15, 143, 140, 0.32);
+  border-bottom: 1px solid rgba(15, 143, 140, 0.32);
+  background: rgba(255, 255, 255, 0.96);
+  transform: translateX(-50%) rotate(45deg);
+}
+
 .axis-label {
   background: rgba(23, 33, 43, 0.9);
   color: #fff;
@@ -800,6 +879,17 @@ button {
   padding: 16px;
   border-left: 1px solid var(--line);
   overflow-y: auto;
+}
+
+.insight-close-row {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  padding: 0 0 4px;
+  color: #394756;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .parse-panel h2 {
@@ -909,6 +999,10 @@ button {
 
 .type-line {
   background: var(--blue);
+}
+
+.type-curve {
+  background: var(--accent);
 }
 
 .type-face {
@@ -1614,6 +1708,7 @@ button {
   .samples,
   .tips-panel,
   .choice-panel,
+  .review-panel,
   .parse-panel,
   .inspect-panel,
   .problem-card {
@@ -1648,6 +1743,24 @@ button {
 
   .choice-option span {
     display: none;
+  }
+
+  .review-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .review-grid {
+    max-height: 150px;
+    overflow: auto;
+  }
+
+  .insight-close-row {
+    display: flex;
+  }
+
+  .info-label {
+    max-width: calc(100vw - 90px);
+    font-size: 11px;
   }
 
   .relation-list,

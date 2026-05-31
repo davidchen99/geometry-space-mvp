@@ -95,6 +95,21 @@
             <div class="choice-options" id="choiceOptions"></div>
           </section>
 
+          <section class="review-panel" id="reviewPanel" aria-label="AI 理解确认" hidden>
+            <div class="section-title">
+              <span>确认理解</span>
+              <span id="reviewState">复杂题先确认</span>
+            </div>
+            <div class="review-content" id="reviewContent"></div>
+            <div class="review-actions">
+              <button class="primary-button compact" id="reviewConfirmBtn" type="button">
+                <i data-lucide="check"></i>
+                按这个生成
+              </button>
+              <button class="secondary-button compact" id="reviewEditBtn" type="button">修改题目</button>
+            </div>
+          </section>
+
           <section class="tips-panel" id="tipsPanel" aria-label="输入 Tips" hidden>
             <div class="section-title">
               <span>Tips</span>
@@ -189,6 +204,12 @@
         </section>
 
         <aside class="insight-panel app-panel" id="insightPanel" aria-label="解析与元素" data-help="这里显示解析出的关系、方程和被点击元素的信息。">
+          <div class="insight-close-row">
+            <span>详情</span>
+            <button class="icon-button ghost" id="insightCloseBtn" type="button" aria-label="关闭详情" title="关闭详情">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
           <section class="parse-panel" aria-label="解析结果">
             <div class="section-title">
               <span>解析</span>
@@ -279,13 +300,17 @@
         <header class="admin-header">
           <div>
             <h2>学生登录</h2>
-            <p>手机号登记后可以保存记录，管理员能看到用量。</p>
+            <p id="authReason">登记后可以生成题目，管理员能看到用量。</p>
           </div>
           <button class="icon-button" id="authCloseBtn" type="button" aria-label="关闭登录">
             <i data-lucide="x"></i>
           </button>
         </header>
         <div class="admin-login">
+          <label>
+            <span>用户名</span>
+            <input id="displayNameInput" autocomplete="name" placeholder="例如：小陈" />
+          </label>
           <label>
             <span>手机号</span>
             <input id="phoneInput" autocomplete="tel" placeholder="输入手机号" />

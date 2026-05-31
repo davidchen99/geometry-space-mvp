@@ -101,6 +101,11 @@ const dom = {
   choicePanel: document.querySelector("#choicePanel"),
   choiceState: document.querySelector("#choiceState"),
   choiceOptions: document.querySelector("#choiceOptions"),
+  reviewPanel: document.querySelector("#reviewPanel"),
+  reviewState: document.querySelector("#reviewState"),
+  reviewContent: document.querySelector("#reviewContent"),
+  reviewConfirmBtn: document.querySelector("#reviewConfirmBtn"),
+  reviewEditBtn: document.querySelector("#reviewEditBtn"),
   sampleList: document.querySelector("#sampleList"),
   title: document.querySelector("#modelTitle"),
   summary: document.querySelector("#modelSummary"),
@@ -127,11 +132,14 @@ const dom = {
   elementToastTitle: document.querySelector("#elementToastTitle"),
   elementToastDetail: document.querySelector("#elementToastDetail"),
   elementDetailBtn: document.querySelector("#elementDetailBtn"),
+  insightCloseBtn: document.querySelector("#insightCloseBtn"),
   userOpenBtn: document.querySelector("#userOpenBtn"),
   userEntryText: document.querySelector("#userEntryText"),
   authModal: document.querySelector("#authModal"),
   authCloseBtn: document.querySelector("#authCloseBtn"),
   authCloseBackdrop: document.querySelector("#authCloseBackdrop"),
+  authReason: document.querySelector("#authReason"),
+  displayNameInput: document.querySelector("#displayNameInput"),
   phoneInput: document.querySelector("#phoneInput"),
   inviteInput: document.querySelector("#inviteInput"),
   registerBtn: document.querySelector("#registerBtn"),
@@ -227,6 +235,9 @@ const state = {
   choiceSignature: "",
   activeChoiceKey: "",
   choiceCache: {},
+  pendingReviewContext: null,
+  pendingAuthAction: null,
+  pendingAuthMessage: "",
   pointerDown: null,
   longPressTimer: null,
   longPressTriggered: false,
@@ -260,7 +271,7 @@ function initUI() {
       dom.input.value = sample.text;
       syncChoiceQuestion();
       setActiveStep("input");
-      generateModel();
+      generateModel({ bypassAuth: true, skipReview: true });
     });
     if (index === 0) {
       dom.input.value = sample.text;
@@ -268,7 +279,7 @@ function initUI() {
     dom.sampleList.appendChild(button);
   });
 
-  dom.generateBtn.addEventListener("click", generateModel);
+  dom.generateBtn.addEventListener("click", () => generateModel());
   dom.tipsBtn.addEventListener("click", showInputTips);
   dom.clearBtn.addEventListener("click", () => {
     dom.input.value = "";
@@ -276,6 +287,7 @@ function initUI() {
     clearGeneratedModel();
     updateProblemHints("");
     syncChoiceQuestion();
+    hideReviewPanel();
     setActiveStep("input");
     setMobilePanel("input");
     setStatus("已清空题目");
@@ -294,6 +306,7 @@ function initUI() {
   dom.input.addEventListener("input", () => {
     updateProblemHints(dom.input.value);
     syncChoiceQuestion();
+    hideReviewPanel();
   });
 
   dom.resetViewBtn.addEventListener("click", resetCameraToModel);
@@ -328,7 +341,7 @@ function initUI() {
   dom.askInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") askQuestion();
   });
-  dom.userOpenBtn.addEventListener("click", openAuthModal);
+  dom.userOpenBtn.addEventListener("click", () => openAuthModal());
   dom.authCloseBtn.addEventListener("click", closeAuthModal);
   dom.authCloseBackdrop.addEventListener("click", closeAuthModal);
   dom.registerBtn.addEventListener("click", () => submitAuth("register"));
@@ -336,6 +349,20 @@ function initUI() {
   dom.elementDetailBtn.addEventListener("click", () => {
     setActiveStep("inspect");
     setMobilePanel("info");
+  });
+  dom.insightCloseBtn.addEventListener("click", () => {
+    setMobilePanel("none");
+    setActiveStep("model");
+  });
+  dom.reviewConfirmBtn.addEventListener("click", () => {
+    const context = state.pendingReviewContext;
+    hideReviewPanel();
+    generateModel({ choiceKey: context?.optionKey || "", skipReview: true });
+  });
+  dom.reviewEditBtn.addEventListener("click", () => {
+    dom.input.focus();
+    setMobilePanel("input");
+    setStatus("可以先修改题目，再生成");
   });
 
   dom.canvas.addEventListener("pointerdown", handlePointerDown);
@@ -354,7 +381,7 @@ function initUI() {
   syncChoiceQuestion();
   setMobilePanel(dom.appShell.dataset.mobilePanel || "none");
   window.lucide?.createIcons();
-  generateModel();
+  generateModel({ bypassAuth: true, skipReview: true });
   if (window.location.hash === "#admin") {
     openAdminModal();
   }
@@ -731,10 +758,22 @@ function adminHeaders() {
   };
 }
 
-function openAuthModal() {
+function requireUser(message, action) {
+  if (state.currentUser?.id) return true;
+  state.pendingAuthAction = typeof action === "function" ? action : null;
+  state.pendingAuthMessage = message || "生成题目前先登记手机号，用来控制调用额度。";
+  openAuthModal(state.pendingAuthMessage);
+  setStatus("请先登记手机号后继续");
+  return false;
+}
+
+function openAuthModal(message = "") {
   dom.authModal.classList.add("open");
   dom.authModal.setAttribute("aria-hidden", "false");
-  dom.phoneInput.focus();
+  dom.authReason.textContent = message || "登记后可以生成题目，管理员能看到用量。";
+  if (state.currentUser?.username) dom.displayNameInput.value = state.currentUser.username;
+  if (state.currentUser?.phone) dom.phoneInput.value = state.currentUser.phone;
+  (dom.displayNameInput.value ? dom.phoneInput : dom.displayNameInput).focus();
 }
 
 function closeAuthModal() {
@@ -744,6 +783,11 @@ function closeAuthModal() {
 
 async function submitAuth(mode) {
   const phone = dom.phoneInput.value.trim();
+  const username = dom.displayNameInput.value.trim();
+  if (mode === "register" && !username) {
+    dom.authHint.textContent = "请先写一个用户名，方便老师或管理员识别。";
+    return;
+  }
   if (!phone) {
     dom.authHint.textContent = "请先输入手机号。";
     return;
@@ -753,6 +797,7 @@ async function submitAuth(mode) {
     const data = await apiFetch(mode === "register" ? "/api/auth/register" : "/api/auth/login", {
       method: "POST",
       body: {
+        username,
         phone,
         inviteCode: dom.inviteInput.value.trim(),
       },
@@ -763,6 +808,10 @@ async function submitAuth(mode) {
     renderCurrentUser();
     closeAuthModal();
     setStatus("已登录，做题记录会计入当前账号");
+    const action = state.pendingAuthAction;
+    state.pendingAuthAction = null;
+    state.pendingAuthMessage = "";
+    if (action) window.setTimeout(action, 0);
   } catch (error) {
     dom.authHint.textContent = error.message;
   }
@@ -787,7 +836,7 @@ async function loadCurrentUser() {
 }
 
 function renderCurrentUser() {
-  dom.userEntryText.textContent = state.currentUser?.phone ? state.currentUser.phone.slice(-4) : "登录";
+  dom.userEntryText.textContent = state.currentUser?.username || (state.currentUser?.phone ? state.currentUser.phone.slice(-4) : "登录");
 }
 
 function openAdminModal() {
@@ -1005,9 +1054,9 @@ function renderUserUsage(users) {
     .map(
       (user) => `
         <div class="recent-item">
-          <strong>${escapeHtml(user.phone || "")}</strong>
+          <strong>${escapeHtml(user.username || user.phone || "")}</strong>
           <span>生成 ${user.usage?.generations || 0} · AI ${user.usage?.aiRequests || 0} / ${user.dailyAiLimit || 0}</span>
-          <span>${escapeHtml(user.inviteCode || "无邀请码")}</span>
+          <span>${escapeHtml(user.phone || "")} · ${escapeHtml(user.inviteCode || "无邀请码")}</span>
         </div>
       `,
     )
@@ -1200,6 +1249,7 @@ function renderStudySteps(refreshFromApi = false) {
   renderStudyContent(local);
 
   if (!refreshFromApi) return;
+  if (!requireUser("AI 解题步骤会消耗额度，请先登记手机号。", () => renderStudySteps(true))) return;
   dom.stepsList.innerHTML = "<li>正在整理更完整的步骤...</li>";
   requestBackendCoach("steps", {})
     .then((data) => {
@@ -1237,7 +1287,7 @@ function buildLocalStudy(model = state.currentModel) {
   const steps = [
     `识别题型：${model.title}。`,
     "建立坐标系：底面尽量放在 z=0 平面，高度沿 z 轴向上。",
-    `标出关键元素：${Object.keys(model.points).length} 个点、${model.segments.length} 条线、${model.faces.length} 个面。`,
+    `标出关键元素：${Object.keys(model.points).length} 个点、${model.segments.length} 条线、${model.faces.length} 个面、${model.curves?.length || 0} 条曲线。`,
   ];
 
   if (relations.length) steps.push(`读出题目关系：${relations.join("；")}。`);
@@ -1256,6 +1306,7 @@ async function askQuestion() {
     dom.askAnswer.textContent = "先输入一个问题，例如：为什么 P 点在 A 点上方？";
     return;
   }
+  if (!requireUser("问答会调用 AI，请先登记手机号。", askQuestion)) return;
 
   dom.askAnswer.textContent = "正在回答...";
   try {
@@ -1297,12 +1348,14 @@ function summarizeCurrentModel() {
     pointCount: Object.keys(model.points || {}).length,
     segmentCount: model.segments?.length || 0,
     faceCount: model.faces?.length || 0,
+    curveCount: model.curves?.length || 0,
     relations: (model.relations || []).slice(0, 8),
     equations: (model.equations || buildModelEquations(model)).slice(0, 5),
   };
 }
 
 async function showInputTips() {
+  if (!requireUser("Tips 会调用 AI 或记录用量，请先登记手机号。", showInputTips)) return;
   const text = dom.input.value.trim();
   dom.tipsPanel.hidden = false;
   setActiveStep("input");
@@ -1474,7 +1527,16 @@ async function generateModel(options = {}) {
     return;
   }
 
+  if (!options.bypassAuth && !requireUser("生成题目前先登记手机号，用来控制使用额度。", () => generateModel(options))) {
+    return;
+  }
+
   updateProblemHints(historyText);
+  if (!options.skipReview && shouldReviewBeforeGenerate(context)) {
+    renderProblemReview(context);
+    return;
+  }
+
   if (context.optionKey && state.choiceCache[context.optionKey]?.model) {
     const cached = state.choiceCache[context.optionKey];
     state.pendingViewMode = cached.viewMode || inferViewModeFromText(cached.problemText);
@@ -1540,6 +1602,85 @@ function formatHistoryTitle(title, context) {
   return context.optionKey ? `${title} · ${context.optionKey}选项` : title;
 }
 
+function shouldReviewBeforeGenerate(context) {
+  const clean = normalizeText(context.rawText || context.problemText || "");
+  if (!clean) return false;
+  if (context.optionKey || parseChoiceQuestion(context.rawText)) return true;
+  if (/(圆|椭圆|双曲线|抛物线|轨迹|动点|方程|函数|参数|变量|求|证明)/.test(clean)) return true;
+  if (clean.length > 90) return true;
+  return analyzeProblemText(context.rawText).some((hint) => hint.level === "warn");
+}
+
+function renderProblemReview(context) {
+  const summary = buildUnderstandingSummary(context);
+  state.pendingReviewContext = context;
+  dom.reviewPanel.hidden = false;
+  dom.reviewState.textContent = summary.level;
+  dom.reviewContent.innerHTML = `
+    <div class="review-brief">${escapeHtml(summary.brief)}</div>
+    <div class="review-grid">
+      ${summary.items.map((item) => `<span><strong>${escapeHtml(item.label)}</strong>${escapeHtml(item.value)}</span>`).join("")}
+    </div>
+    <div class="review-preview">${escapeHtml(summary.preview)}</div>
+  `;
+  setActiveStep("parse");
+  setMobilePanel("input");
+  setStatus("复杂题已先整理理解，确认后再生成");
+  window.lucide?.createIcons();
+}
+
+function hideReviewPanel() {
+  if (!dom.reviewPanel) return;
+  dom.reviewPanel.hidden = true;
+  state.pendingReviewContext = null;
+}
+
+function buildUnderstandingSummary(context) {
+  const raw = context.rawText || context.problemText || "";
+  const clean = normalizeText(raw);
+  const choice = parseChoiceQuestion(raw);
+  const labels = Array.from(new Set(clean.match(/[A-Z][0-9]?/g) || [])).slice(0, 10);
+  const lengths = Array.from(parseLengthMap(clean).entries()).slice(0, 6);
+  const shape =
+    clean.match(/正方体|长方体|三棱锥|四棱锥|正四棱锥|三角形|圆|椭圆|双曲线|抛物线|直线|轨迹/)?.[0] || "待判断";
+  const relations = [];
+  if (/垂直|⊥/.test(clean)) relations.push("垂直");
+  if (/平行|\/\//.test(clean)) relations.push("平行");
+  if (/中点/.test(clean)) relations.push("中点");
+  if (/交点/.test(clean)) relations.push("交点");
+  if (/方程|=/.test(clean)) relations.push("方程/长度");
+
+  const items = [
+    { label: "图形：", value: shape },
+    { label: "视图：", value: inferViewModeFromText(raw) === "2d" ? "2D 平面" : "3D 空间" },
+    { label: "点名：", value: labels.length ? labels.join("、") : "未明确" },
+    { label: "条件：", value: relations.length ? relations.join("、") : "未识别到特殊关系" },
+  ];
+
+  if (lengths.length) {
+    items.push({ label: "长度：", value: lengths.map(([key, value]) => `${key}=${formatNumber(value)}`).join("、") });
+  }
+  if (choice) {
+    items.push({ label: "选项：", value: choice.options.map((item) => item.key).join("、") });
+  }
+  if (context.optionKey) {
+    items.push({ label: "当前：", value: `${context.optionKey}：${context.optionText}` });
+  }
+
+  return {
+    level: choice || context.optionKey ? "选择题确认" : "复杂题确认",
+    brief: context.optionKey ? `准备按 ${context.optionKey} 选项理解题目。` : "系统先把题目拆成图形、条件和视图，再生成模型。",
+    items,
+    preview: buildPreviewText(shape, relations, choice, context),
+  };
+}
+
+function buildPreviewText(shape, relations, choice, context) {
+  if (choice && !context.optionKey) return `简略图：题干 + ${choice.options.length} 个选项，点某个选项后会按该条件生成。`;
+  if (/圆|椭圆|双曲线|抛物线|轨迹|直线/.test(shape)) return `简略图：优先用 2D 坐标系展示 ${shape}，再标出点、交点或轨迹。`;
+  return `简略图：先生成 ${shape} 的主体，再叠加 ${relations.length ? relations.join("、") : "题目给出的"} 关系。`;
+}
+
 function buildModelFromText(rawText) {
   const text = normalizeText(rawText);
   let model;
@@ -1554,13 +1695,15 @@ function buildModelFromText(rawText) {
     model = createSquarePyramidModel(text);
   } else if (/三角形|△/.test(text)) {
     model = createTriangleModel(text);
+  } else if (/(椭圆|双曲线|抛物线|圆|直线|方程|轨迹|动点)/.test(text) && !/(圆柱|圆锥|球)/.test(text)) {
+    model = createAnalytic2DModel(text);
   } else {
     throw new Error("暂未识别该题型。");
   }
 
   applyTextFeatures(model, text);
   centerModelOnXY(model);
-  model.equations = buildModelEquations(model);
+  model.equations = model.equations?.length ? model.equations : buildModelEquations(model);
   model.source = "local";
   return model;
 }
@@ -1583,6 +1726,7 @@ function createBaseModel(type, title, description) {
     points: {},
     segments: [],
     faces: [],
+    curves: [],
     relations: [],
     equations: [],
   };
@@ -1751,6 +1895,121 @@ function createTriangleModel(text) {
   return model;
 }
 
+function createAnalytic2DModel(text) {
+  if (/椭圆/.test(text)) return createEllipseModel(text);
+  if (/双曲线/.test(text)) return createHyperbolaModel(text);
+  if (/抛物线/.test(text)) return createParabolaModel(text);
+  if (/圆|轨迹|动点/.test(text)) return createCircleModel(text);
+  return createLineModel(text);
+}
+
+function createCircleModel(text) {
+  const radius = parseNamedNumber(text, ["半径", "r"], 2);
+  const model = createBaseModel("circle", "圆的平面模型", `以 O 为圆心，半径 ${formatNumber(radius)}。`);
+  addPoint(model, "O", 0, 0, 0, "圆心");
+  addPoint(model, "A", radius, 0, 0, "圆上一点");
+  addSegment(model, "O", "A", "aux", "半径");
+  addCurve(model, "圆O", sampleParametricCurve((t) => {
+    const angle = t * Math.PI * 2;
+    return { x: radius * Math.cos(angle), y: radius * Math.sin(angle), z: 0 };
+  }, 96, true), `x^2 + y^2 = ${formatNumber(radius * radius)}`);
+  addRelation(model, `半径 r=${formatNumber(radius)}`);
+  model.equations.push(`圆：x^2 + y^2 = ${formatNumber(radius * radius)}`);
+  return model;
+}
+
+function createEllipseModel(text) {
+  const a = parseNamedNumber(text, ["长半轴", "a"], 3);
+  const b = parseNamedNumber(text, ["短半轴", "b"], 2);
+  const model = createBaseModel("ellipse", "椭圆平面模型", `长半轴 ${formatNumber(a)}，短半轴 ${formatNumber(b)}。`);
+  addPoint(model, "O", 0, 0, 0, "中心");
+  addPoint(model, "A", a, 0, 0, "长轴端点");
+  addPoint(model, "B", 0, b, 0, "短轴端点");
+  addCurve(model, "椭圆", sampleParametricCurve((t) => {
+    const angle = t * Math.PI * 2;
+    return { x: a * Math.cos(angle), y: b * Math.sin(angle), z: 0 };
+  }, 112, true), `x^2/${formatNumber(a * a)} + y^2/${formatNumber(b * b)} = 1`);
+  addRelation(model, `a=${formatNumber(a)}，b=${formatNumber(b)}`);
+  model.equations.push(`椭圆：x^2/${formatNumber(a * a)} + y^2/${formatNumber(b * b)} = 1`);
+  return model;
+}
+
+function createParabolaModel(text) {
+  const p = parseNamedNumber(text, ["焦参数", "p"], 1);
+  const model = createBaseModel("parabola", "抛物线平面模型", `示意 y^2 = ${formatNumber(4 * p)}x。`);
+  addPoint(model, "O", 0, 0, 0, "顶点");
+  addPoint(model, "F", p, 0, 0, "焦点");
+  addCurve(model, "抛物线", sampleRangeCurve(-3, 3, 90, (u) => ({ x: (u * u) / (4 * p), y: u, z: 0 })), `y^2 = ${formatNumber(4 * p)}x`);
+  addRelation(model, `焦点 F(${formatNumber(p)},0)`);
+  model.equations.push(`抛物线：y^2 = ${formatNumber(4 * p)}x`);
+  return model;
+}
+
+function createHyperbolaModel(text) {
+  const a = parseNamedNumber(text, ["实半轴", "a"], 2);
+  const b = parseNamedNumber(text, ["虚半轴", "b"], 1.3);
+  const model = createBaseModel("hyperbola", "双曲线平面模型", `示意 x^2/${formatNumber(a * a)} - y^2/${formatNumber(b * b)} = 1。`);
+  addPoint(model, "O", 0, 0, 0, "中心");
+  addPoint(model, "A", a, 0, 0, "右顶点");
+  addPoint(model, "B", -a, 0, 0, "左顶点");
+  addCurve(model, "双曲线右支", sampleRangeCurve(-1.35, 1.35, 70, (u) => ({ x: a * Math.cosh(u), y: b * Math.sinh(u), z: 0 })), "右支");
+  addCurve(model, "双曲线左支", sampleRangeCurve(-1.35, 1.35, 70, (u) => ({ x: -a * Math.cosh(u), y: b * Math.sinh(u), z: 0 })), "左支");
+  addRelation(model, `a=${formatNumber(a)}，b=${formatNumber(b)}`);
+  model.equations.push(`双曲线：x^2/${formatNumber(a * a)} - y^2/${formatNumber(b * b)} = 1`);
+  return model;
+}
+
+function createLineModel(text) {
+  const slopeMatch = text.match(/k=?(-?\d+(?:\.\d+)?)/);
+  const slope = slopeMatch ? Number(slopeMatch[1]) : 1;
+  const interceptMatch = text.match(/b=?(-?\d+(?:\.\d+)?)/);
+  const intercept = interceptMatch ? Number(interceptMatch[1]) : 0;
+  const model = createBaseModel("line2d", "直线平面模型", `示意直线 y=${formatNumber(slope)}x+${formatNumber(intercept)}。`);
+  addPoint(model, "A", -2.5, slope * -2.5 + intercept, 0, "直线上一点");
+  addPoint(model, "B", 2.5, slope * 2.5 + intercept, 0, "直线上一点");
+  addSegment(model, "A", "B", "edge", "直线示意");
+  addRelation(model, `斜率 k=${formatNumber(slope)}`);
+  model.equations.push(`直线：y=${formatNumber(slope)}x+${formatNumber(intercept)}`);
+  return model;
+}
+
+function sampleParametricCurve(factory, count, closed = false) {
+  const points = [];
+  const max = closed ? count : count - 1;
+  for (let index = 0; index < count; index += 1) {
+    points.push(factory(index / max));
+  }
+  if (closed) points.push({ ...points[0] });
+  return points;
+}
+
+function sampleRangeCurve(from, to, count, factory) {
+  const points = [];
+  for (let index = 0; index < count; index += 1) {
+    const t = from + ((to - from) * index) / (count - 1);
+    points.push(factory(t));
+  }
+  return points;
+}
+
+function addCurve(model, label, points, note = "") {
+  model.curves.push({
+    id: `curve:${label}`,
+    label,
+    points,
+    note,
+  });
+}
+
+function parseNamedNumber(text, names, fallback) {
+  for (const name of names) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = text.match(new RegExp(`${escaped}(?:为|是|=)?(-?\\d+(?:\\.\\d+)?)`));
+    if (match) return Math.abs(Number(match[1])) || fallback;
+  }
+  return fallback;
+}
+
 function applyTextFeatures(model, text) {
   applyMidpoints(model, text);
   applyIntersections(model, text);
@@ -1909,15 +2168,26 @@ function selectModelMeasurement() {
   if (!state.currentModel) return;
   state.interactiveObjects.forEach((object) => setHighlight(object, false));
   const metrics = computeModelMetrics(state.currentModel);
-  const parts = [`总表面积 ${formatNumber(metrics.totalFaceArea)}`];
-  if (metrics.volume > 0) parts.push(`体积 ${formatNumber(metrics.volume)}`);
-  else parts.push("平面图形体积为 0");
+  const parts = (state.currentModel.curves || []).length && !(state.currentModel.faces || []).length
+    ? [`曲线 ${state.currentModel.curves.length} 条`, "平面解析几何"]
+    : [`总表面积 ${formatNumber(metrics.totalFaceArea)}`];
+  if (!((state.currentModel.curves || []).length && !(state.currentModel.faces || []).length)) {
+    if (metrics.volume > 0) parts.push(`体积 ${formatNumber(metrics.volume)}`);
+    else parts.push("平面图形体积为 0");
+  }
   const data = {
     label: state.currentModel.title,
     detail: `${parts.join("，")}。`,
+    quick: parts.join(" · "),
+    infoPosition: new THREE.Vector3(
+      (state.currentBounds.min.x + state.currentBounds.max.x) / 2,
+      (state.currentBounds.min.y + state.currentBounds.max.y) / 2,
+      state.currentBounds.max.z,
+    ),
   };
   dom.selectedBox.innerHTML = `<strong>${data.label}</strong><span>${data.detail}</span>`;
   showElementToast(data);
+  showInlineInfoLabel(data);
   setActiveStep("inspect");
   if (window.matchMedia("(max-width: 820px)").matches) setMobilePanel("info");
 }
@@ -2057,9 +2327,16 @@ function centerModelOnXY(model) {
     point.position.x -= offsetX;
     point.position.y -= offsetY;
   });
+  (model.curves || []).forEach((curve) => {
+    (curve.points || []).forEach((point) => {
+      point.x -= offsetX;
+      point.y -= offsetY;
+    });
+  });
 }
 
 function renderModel(model) {
+  hideReviewPanel();
   clearGeneratedModel();
   state.currentModel = model;
   state.modelGroup = new THREE.Group();
@@ -2070,6 +2347,7 @@ function renderModel(model) {
   rebuildGridAndAxes(Math.max(bounds.size.x, bounds.size.y, bounds.size.z, 2) * 3.2);
 
   model.faces.forEach((face, index) => renderFace(model, face, index));
+  (model.curves || []).forEach((curve, index) => renderCurve(model, curve, index));
   model.segments.forEach((segment) => renderSegment(model, segment));
   Object.values(model.points).forEach((point) => renderPoint(point));
   applyAuxVisibility();
@@ -2112,11 +2390,14 @@ function renderFace(model, face, index) {
     metalness: 0,
   });
   const mesh = new THREE.Mesh(geometry, material);
+  const center = positions.reduce((sum, point) => sum.add(toVector3(point)), new THREE.Vector3()).multiplyScalar(1 / positions.length);
   mesh.userData = {
     elementId: face.id,
     type: "face",
     label: face.label,
     detail: `${face.label}，由 ${face.vertices.join("、")} 构成，面积 ${formatNumber(area)}。`,
+    quick: `面积 ${formatNumber(area)}`,
+    infoPosition: center,
     baseColor: material.color.clone(),
     baseOpacity: material.opacity,
   };
@@ -2130,6 +2411,7 @@ function renderSegment(model, segment) {
   const start = toVector3(from);
   const end = toVector3(to);
   const length = start.distanceTo(end);
+  const slope = segmentSlopeText(start, end);
   const radius = segment.kind === "aux" ? 0.012 : 0.018;
   const material = new THREE.MeshStandardMaterial({
     color: segment.kind === "connection" ? colors.connection : segment.kind === "aux" ? colors.aux : colors.line,
@@ -2147,12 +2429,41 @@ function renderSegment(model, segment) {
     elementId: segment.id,
     type: "line",
     label: segment.label,
-    detail: `${segment.label}，${segment.note || "线段"}，长度 ${formatNumber(length)}。`,
+    detail: `${segment.label}，${segment.note || "线段"}，长度 ${formatNumber(length)}${slope ? `，${slope}` : ""}。`,
+    quick: `${segment.label} = ${formatNumber(length)}${slope ? ` · ${slope}` : ""}`,
+    infoPosition: midpointVector.clone(),
     baseColor: material.color.clone(),
     baseOpacity: material.opacity,
     aux: segment.kind === "aux",
     from: segment.from,
     to: segment.to,
+  };
+  state.modelGroup.add(mesh);
+  state.interactiveObjects.push(mesh);
+}
+
+function renderCurve(model, curve, index) {
+  const vectors = (curve.points || []).map((point) => toVector3(point));
+  if (vectors.length < 2) return;
+  const path = new THREE.CatmullRomCurve3(vectors);
+  const geometry = new THREE.TubeGeometry(path, Math.max(vectors.length * 2, 36), 0.018, 10, false);
+  const material = new THREE.MeshStandardMaterial({
+    color: colors.face[index % colors.face.length],
+    roughness: 0.42,
+    transparent: true,
+    opacity: 0.95,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  const center = vectors[Math.floor(vectors.length / 2)].clone();
+  mesh.userData = {
+    elementId: curve.id,
+    type: "curve",
+    label: curve.label,
+    detail: `${curve.label}${curve.note ? `，${curve.note}` : ""}。`,
+    quick: curve.note || curve.label,
+    infoPosition: center,
+    baseColor: material.color.clone(),
+    baseOpacity: material.opacity,
   };
   state.modelGroup.add(mesh);
   state.interactiveObjects.push(mesh);
@@ -2172,6 +2483,8 @@ function renderPoint(point) {
     type: "point",
     label: `点 ${point.label}`,
     detail: `${point.role}，坐标 (${formatNumber(point.position.x)}, ${formatNumber(point.position.y)}, ${formatNumber(point.position.z)})。`,
+    quick: `${point.label}(${formatNumber(point.position.x)}, ${formatNumber(point.position.y)}, ${formatNumber(point.position.z)})`,
+    infoPosition: mesh.position.clone(),
     baseColor: material.color.clone(),
     baseOpacity: 1,
     pointLabel: point.label,
@@ -2186,12 +2499,14 @@ function createLabel(text, position, className, kind, elementId = "") {
   el.className = className;
   el.textContent = text;
   dom.labelLayer.appendChild(el);
-  state.labelItems.push({
+  const item = {
     el,
     position: position.clone ? position.clone() : new THREE.Vector3(position.x, position.y, position.z),
     kind,
     elementId,
-  });
+  };
+  state.labelItems.push(item);
+  return item;
 }
 
 function clearGeneratedModel() {
@@ -2222,6 +2537,7 @@ function clearGeneratedModel() {
   dom.elementList.innerHTML = "";
   updateSelectedBox(null);
   hideElementToast();
+  clearInlineInfoLabels();
 }
 
 function disposeObject(object) {
@@ -2260,11 +2576,12 @@ function renderModelInfo(model) {
 
 function renderElementList(model) {
   const metrics = computeModelMetrics(model);
+  const hasCurveOnly = (model.curves || []).length && !(model.faces || []).length;
   const items = [
     {
       id: "measure:model",
-      label: metrics.volume > 0 ? "整体体积" : "整体面积",
-      meta: metrics.volume > 0 ? `体积 ${formatNumber(metrics.volume)}` : `面积 ${formatNumber(metrics.totalFaceArea)}`,
+      label: hasCurveOnly ? "整体曲线" : metrics.volume > 0 ? "整体体积" : "整体面积",
+      meta: hasCurveOnly ? "2D 解析几何" : metrics.volume > 0 ? `体积 ${formatNumber(metrics.volume)}` : `面积 ${formatNumber(metrics.totalFaceArea)}`,
       type: "measure",
     },
     ...Object.values(model.points).map((point) => ({
@@ -2278,6 +2595,12 @@ function renderElementList(model) {
       label: `线段 ${segment.label}`,
       meta: segment.note || "线段",
       type: "line",
+    })),
+    ...(model.curves || []).map((curve) => ({
+      id: curve.id,
+      label: curve.label,
+      meta: curve.note || "曲线",
+      type: "curve",
     })),
     ...model.faces.map((face) => ({
       id: face.id,
@@ -2384,6 +2707,7 @@ function selectElement(elementId, options = {}) {
   state.selectedElementId = elementId;
   updateSelectedBox(objects[0].userData);
   showElementToast(objects[0].userData);
+  showInlineInfoLabel(objects[0].userData);
   setActiveStep("inspect");
 
   if (state.measureMode && objects[0].userData.type === "point") {
@@ -2397,9 +2721,15 @@ function setHighlight(object, active) {
   const { material, userData } = object;
   if (!material || !userData.baseColor) return;
   material.color.copy(active ? new THREE.Color(colors.selected) : userData.baseColor);
-  if ("opacity" in material) material.opacity = active ? Math.max(userData.baseOpacity, 0.88) : userData.baseOpacity;
+  if ("opacity" in material) {
+    const boost = userData.type === "face" ? 0.48 : 0.9;
+    material.opacity = active ? Math.max(userData.baseOpacity, boost) : userData.baseOpacity;
+  }
   if (object.userData.type === "point") {
-    object.scale.setScalar(active ? 1.45 : 1);
+    object.scale.setScalar(active ? 1.85 : 1);
+  }
+  if (object.userData.type === "line") {
+    object.scale.set(active ? 1.9 : 1, 1, active ? 1.9 : 1);
   }
 }
 
@@ -2414,7 +2744,7 @@ function updateSelectedBox(data) {
 function showElementToast(data) {
   if (!dom.elementToast || !data) return;
   dom.elementToastTitle.textContent = data.label || "当前元素";
-  dom.elementToastDetail.textContent = data.detail || "已选中元素。";
+  dom.elementToastDetail.textContent = data.quick || data.detail || "已选中元素。";
   dom.elementToast.hidden = false;
   setStatus(`${data.label || "元素"} 已选中`);
 }
@@ -2422,6 +2752,19 @@ function showElementToast(data) {
 function hideElementToast() {
   if (!dom.elementToast) return;
   dom.elementToast.hidden = true;
+}
+
+function showInlineInfoLabel(data) {
+  if (!data?.infoPosition) return;
+  clearInlineInfoLabels();
+  createLabel(data.quick || data.detail || data.label, data.infoPosition, "info-label", "info");
+}
+
+function clearInlineInfoLabels() {
+  state.labelItems
+    .filter((item) => item.kind === "info")
+    .forEach((item) => item.el.remove());
+  state.labelItems = state.labelItems.filter((item) => item.kind !== "info");
 }
 
 function toggleMeasureMode() {
@@ -2434,7 +2777,13 @@ function toggleMeasureMode() {
   dom.measureBtn.classList.toggle("active", state.measureMode);
   setActiveStep("inspect");
   closeMobilePanel();
-  setStatus(state.measureMode ? "测距：选择两个点" : "已退出测距");
+  if (state.measureMode) {
+    showToolHint("测距", "先点第一个点，再点第二个点。");
+    setStatus("测距：先点第一个点，再点第二个点");
+  } else {
+    hideElementToast();
+    setStatus("已退出测距");
+  }
 }
 
 function handleMeasurePoint(pointLabel) {
@@ -2442,7 +2791,8 @@ function handleMeasurePoint(pointLabel) {
   if (state.measurePoints.includes(pointLabel)) return;
   state.measurePoints.push(pointLabel);
   if (state.measurePoints.length === 1) {
-    setStatus(`已选择点 ${pointLabel}`);
+    showToolHint("测距", `已选 ${pointLabel}，再点第二个点。`);
+    setStatus(`已选择点 ${pointLabel}，再点第二个点`);
     return;
   }
 
@@ -2456,9 +2806,27 @@ function handleMeasurePoint(pointLabel) {
   state.measurePoints = [];
   const detail = `${first}${second} 距离 ${formatNumber(distance)}。`;
   dom.selectedBox.innerHTML = `<strong>测距结果</strong><span>${detail}</span>`;
+  showElementToast({
+    label: "测距结果",
+    detail,
+    quick: `${first}${second} = ${formatNumber(distance)}`,
+    infoPosition: p1.clone().add(p2).multiplyScalar(0.5),
+  });
+  showInlineInfoLabel({
+    label: "测距结果",
+    quick: `${first}${second} = ${formatNumber(distance)}`,
+    infoPosition: p1.clone().add(p2).multiplyScalar(0.5),
+  });
   setActiveStep("output");
   if (window.matchMedia("(max-width: 820px)").matches) setMobilePanel("info");
   setStatus(detail);
+}
+
+function showToolHint(title, detail) {
+  if (!dom.elementToast) return;
+  dom.elementToastTitle.textContent = title;
+  dom.elementToastDetail.textContent = detail;
+  dom.elementToast.hidden = false;
 }
 
 function renderMeasureLine(p1, p2) {
@@ -2547,7 +2915,13 @@ function setLoading(active) {
 }
 
 function computeBounds(model) {
-  const values = Object.values(model.points).map((point) => point.position);
+  const values = [
+    ...Object.values(model.points).map((point) => point.position),
+    ...(model.curves || []).flatMap((curve) => curve.points || []),
+  ];
+  if (!values.length) {
+    values.push({ x: -1, y: -1, z: 0 }, { x: 1, y: 1, z: 0 });
+  }
   const min = {
     x: Math.min(...values.map((point) => point.x)),
     y: Math.min(...values.map((point) => point.y)),
@@ -2577,6 +2951,14 @@ function formatNumber(value) {
   if (!Number.isFinite(value)) return "--";
   const rounded = Math.round(value * 1000) / 1000;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function segmentSlopeText(start, end) {
+  if (Math.abs((start.z || 0) - (end.z || 0)) > 0.001) return "";
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  if (Math.abs(dx) < 0.001) return "斜率 k=∞";
+  return `斜率 k=${formatNumber(dy / dx)}`;
 }
 
 function resizeRenderer() {
@@ -2627,7 +3009,8 @@ function updateLabels() {
     if (!visible) return;
     const x = (projected.x * 0.5 + 0.5) * width;
     const y = (-projected.y * 0.5 + 0.5) * height;
-    item.el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+    const offset = item.kind === "info" ? "translate(-50%, calc(-100% - 14px))" : "translate(-50%, -50%)";
+    item.el.style.transform = `translate(${x}px, ${y}px) ${offset}`;
   });
 }
 

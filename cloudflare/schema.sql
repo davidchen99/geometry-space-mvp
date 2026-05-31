@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
+  username TEXT,
   phone TEXT NOT NULL UNIQUE,
   role TEXT NOT NULL DEFAULT 'student',
   invite_code TEXT,

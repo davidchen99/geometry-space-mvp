@@ -52,7 +52,9 @@ async function handleApi(request, env, pathname) {
 async function registerUser(request, env) {
   const body = await readBody(request);
   const phone = normalizePhone(body.phone);
+  const username = normalizeUsername(body.username);
   if (!phone) return json({ ok: false, error: "请输入手机号" }, 400);
+  if (!username) return json({ ok: false, error: "请输入用户名" }, 400);
   let user = await env.DB.prepare("SELECT * FROM users WHERE phone = ?").bind(phone).first();
   if (!user) {
     const inviteCode = String(body.inviteCode || "").trim().toUpperCase();
@@ -61,6 +63,7 @@ async function registerUser(request, env) {
     if (invite && invite.max_uses && invite.used_count >= invite.max_uses) return json({ ok: false, error: "邀请码已用完" }, 400);
     user = {
       id: crypto.randomUUID(),
+      username,
       phone,
       role: "student",
       invite_code: inviteCode,
@@ -70,11 +73,14 @@ async function registerUser(request, env) {
       created_at: new Date().toISOString(),
     };
     await env.DB.prepare(
-      "INSERT INTO users (id, phone, role, invite_code, plan, daily_ai_limit, monthly_token_limit, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO users (id, username, phone, role, invite_code, plan, daily_ai_limit, monthly_token_limit, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
-      .bind(user.id, user.phone, user.role, user.invite_code, user.plan, user.daily_ai_limit, user.monthly_token_limit, user.created_at)
+      .bind(user.id, user.username, user.phone, user.role, user.invite_code, user.plan, user.daily_ai_limit, user.monthly_token_limit, user.created_at)
       .run();
     if (invite) await env.DB.prepare("UPDATE invites SET used_count = used_count + 1 WHERE code = ?").bind(inviteCode).run();
+  } else if (username && user.username !== username) {
+    await env.DB.prepare("UPDATE users SET username = ? WHERE id = ?").bind(username, user.id).run();
+    user.username = username;
   }
   const token = await createSession(env, user.id, user.role || "student");
   return json({ ok: true, token, user: publicUser(user) });
@@ -371,12 +377,16 @@ function fromInviteRow(row) {
 
 function publicUser(row) {
   if (!row) return null;
-  return { id: row.id, phone: row.phone, role: row.role, plan: row.plan, dailyAiLimit: row.daily_ai_limit, monthlyTokenLimit: row.monthly_token_limit, createdAt: row.created_at };
+  return { id: row.id, username: row.username || "", phone: row.phone, role: row.role, plan: row.plan, dailyAiLimit: row.daily_ai_limit, monthlyTokenLimit: row.monthly_token_limit, createdAt: row.created_at };
 }
 
 function normalizePhone(value) {
   const phone = String(value || "").replace(/[^\d+]/g, "");
   return phone.length >= 6 ? phone.slice(0, 24) : "";
+}
+
+function normalizeUsername(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 32);
 }
 
 function stripJsonFence(content) {
