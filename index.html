@@ -9,7 +9,7 @@
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   </head>
   <body>
-    <div class="app-shell" id="appShell" data-mobile-panel="input">
+    <div class="app-shell" id="appShell" data-mobile-panel="none">
       <header class="top-bar">
         <div class="brand">
           <div class="brand-mark">几</div>
@@ -87,6 +87,14 @@
             <div class="problem-hints" id="problemHints" hidden></div>
           </section>
 
+          <section class="choice-panel" id="choicePanel" aria-label="选择题选项" hidden>
+            <div class="section-title">
+              <span>选择题</span>
+              <span id="choiceState">点选项看对应情况</span>
+            </div>
+            <div class="choice-options" id="choiceOptions"></div>
+          </section>
+
           <section class="tips-panel" id="tipsPanel" aria-label="输入 Tips" hidden>
             <div class="section-title">
               <span>Tips</span>
@@ -148,6 +156,14 @@
               <strong>等待生成</strong>
               <span>正方体、长方体、三棱锥、四棱锥、三角形</span>
             </div>
+          </div>
+
+          <div class="element-toast" id="elementToast" hidden>
+            <div>
+              <strong id="elementToastTitle">未选择</strong>
+              <span id="elementToastDetail">点击点、线、面查看简要信息。</span>
+            </div>
+            <button class="secondary-button compact" id="elementDetailBtn" type="button">详情</button>
           </div>
 
           <div class="viewer-status" id="statusText">准备就绪</div>
@@ -242,11 +258,11 @@
       </aside>
 
       <nav class="mobile-nav" aria-label="移动端快捷操作">
-        <button class="mobile-tab active" type="button" data-mobile-panel="input">
+        <button class="mobile-tab" type="button" data-mobile-panel="input">
           <i data-lucide="edit-3"></i>
           题目
         </button>
-        <button class="mobile-tab" type="button" data-mobile-panel="none">
+        <button class="mobile-tab active" type="button" data-mobile-panel="none">
           <i data-lucide="box"></i>
           模型
         </button>

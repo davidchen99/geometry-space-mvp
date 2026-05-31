@@ -98,6 +98,9 @@ const dom = {
   problemHints: document.querySelector("#problemHints"),
   clearBtn: document.querySelector("#clearBtn"),
   selectAllBtn: document.querySelector("#selectAllBtn"),
+  choicePanel: document.querySelector("#choicePanel"),
+  choiceState: document.querySelector("#choiceState"),
+  choiceOptions: document.querySelector("#choiceOptions"),
   sampleList: document.querySelector("#sampleList"),
   title: document.querySelector("#modelTitle"),
   summary: document.querySelector("#modelSummary"),
@@ -120,6 +123,10 @@ const dom = {
   canvas: document.querySelector("#sceneCanvas"),
   labelLayer: document.querySelector("#labelLayer"),
   emptyState: document.querySelector("#emptyState"),
+  elementToast: document.querySelector("#elementToast"),
+  elementToastTitle: document.querySelector("#elementToastTitle"),
+  elementToastDetail: document.querySelector("#elementToastDetail"),
+  elementDetailBtn: document.querySelector("#elementDetailBtn"),
   userOpenBtn: document.querySelector("#userOpenBtn"),
   userEntryText: document.querySelector("#userEntryText"),
   authModal: document.querySelector("#authModal"),
@@ -216,6 +223,13 @@ const state = {
   helpMode: false,
   viewMode: "3d",
   pendingViewMode: "",
+  choiceQuestion: null,
+  choiceSignature: "",
+  activeChoiceKey: "",
+  choiceCache: {},
+  pointerDown: null,
+  longPressTimer: null,
+  longPressTriggered: false,
 };
 
 const colors = {
@@ -237,13 +251,14 @@ function init() {
 }
 
 function initUI() {
-  samples.forEach((sample, index) => {
+  samples.slice(0, 3).forEach((sample, index) => {
     const button = document.createElement("button");
     button.className = "sample-button";
     button.type = "button";
     button.innerHTML = `<strong>${sample.title}</strong><span>${sample.meta}</span>`;
     button.addEventListener("click", () => {
       dom.input.value = sample.text;
+      syncChoiceQuestion();
       setActiveStep("input");
       generateModel();
     });
@@ -260,6 +275,7 @@ function initUI() {
     dom.input.focus();
     clearGeneratedModel();
     updateProblemHints("");
+    syncChoiceQuestion();
     setActiveStep("input");
     setMobilePanel("input");
     setStatus("已清空题目");
@@ -275,7 +291,10 @@ function initUI() {
     }
   });
   dom.input.addEventListener("focus", () => setActiveStep("input"));
-  dom.input.addEventListener("input", () => updateProblemHints(dom.input.value));
+  dom.input.addEventListener("input", () => {
+    updateProblemHints(dom.input.value);
+    syncChoiceQuestion();
+  });
 
   dom.resetViewBtn.addEventListener("click", resetCameraToModel);
   dom.gridBtn.addEventListener("click", () => {
@@ -314,8 +333,15 @@ function initUI() {
   dom.authCloseBackdrop.addEventListener("click", closeAuthModal);
   dom.registerBtn.addEventListener("click", () => submitAuth("register"));
   dom.userLoginBtn.addEventListener("click", () => submitAuth("login"));
+  dom.elementDetailBtn.addEventListener("click", () => {
+    setActiveStep("inspect");
+    setMobilePanel("info");
+  });
 
   dom.canvas.addEventListener("pointerdown", handlePointerDown);
+  dom.canvas.addEventListener("pointermove", handlePointerMove);
+  dom.canvas.addEventListener("pointerup", handlePointerUp);
+  dom.canvas.addEventListener("pointercancel", clearPointerTracking);
   window.addEventListener("resize", resizeRenderer);
 
   initAdminUI();
@@ -325,6 +351,8 @@ function initUI() {
   renderHelpPanel();
   renderHistory();
   updateProblemHints(dom.input.value);
+  syncChoiceQuestion();
+  setMobilePanel(dom.appShell.dataset.mobilePanel || "none");
   window.lucide?.createIcons();
   generateModel();
   if (window.location.hash === "#admin") {
@@ -406,9 +434,18 @@ function setViewMode(mode, reset = true) {
     button.classList.toggle("active", button.dataset.viewMode === nextMode);
   });
   dom.viewModeLabel.textContent = nextMode === "2d" ? "二维视图" : "三维视图";
+  if (state.axesGroup) {
+    state.axesGroup.visible = nextMode !== "2d";
+  }
   if (state.controls) {
     state.controls.enableRotate = nextMode !== "2d";
+    state.controls.enablePan = true;
     state.controls.screenSpacePanning = nextMode === "2d";
+    state.controls.mouseButtons.LEFT = nextMode === "2d" ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+    state.controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+    state.controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+    state.controls.touches.ONE = nextMode === "2d" ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
+    state.controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
   }
   if (reset) resetCameraToModel();
   setStatus(nextMode === "2d" ? "已切换到 2D 平面视图" : "已切换到 3D 空间视图");
@@ -425,6 +462,190 @@ function inferViewModeFromModel(model) {
   if (model.type === "triangle") return "2d";
   const bounds = computeBounds(model);
   return bounds.size.z < 0.2 ? "2d" : "3d";
+}
+
+function parseChoiceQuestion(rawText) {
+  const raw = String(rawText || "").trim();
+  if (!raw) return null;
+
+  const lineChoice = parseLineChoiceQuestion(raw);
+  if (lineChoice) return lineChoice;
+
+  const markerRegex = /(?:^|[\s;；。:：])(?:[（(]\s*([A-Da-d])\s*[）)]|([A-Da-d])\s*[.．:：])\s*/g;
+  const markers = [];
+  let match;
+  while ((match = markerRegex.exec(raw))) {
+    const key = (match[1] || match[2] || "").toUpperCase();
+    if (!key) continue;
+    markers.push({
+      key,
+      index: match.index,
+      contentStart: markerRegex.lastIndex,
+    });
+  }
+
+  return buildChoiceQuestion(raw, markers);
+}
+
+function parseLineChoiceQuestion(raw) {
+  const lines = raw.split(/\r?\n/);
+  const markers = [];
+  let cursor = 0;
+
+  lines.forEach((line) => {
+    const trimmed = line.trimStart();
+    const leading = line.length - trimmed.length;
+    const match = trimmed.match(/^(?:[（(]\s*([A-Da-d])\s*[）)]|([A-Da-d])\s*[.．、:：])\s*/);
+    if (match) {
+      markers.push({
+        key: (match[1] || match[2]).toUpperCase(),
+        index: cursor + leading,
+        contentStart: cursor + leading + match[0].length,
+      });
+    }
+    cursor += line.length + 1;
+  });
+
+  return buildChoiceQuestion(raw, markers);
+}
+
+function buildChoiceQuestion(raw, markers) {
+  if (markers.length < 2) return null;
+
+  const uniqueMarkers = [];
+  const seen = new Set();
+  markers
+    .filter((item) => /[A-D]/.test(item.key))
+    .forEach((item) => {
+      if (seen.has(item.key)) return;
+      seen.add(item.key);
+      uniqueMarkers.push(item);
+    });
+
+  if (uniqueMarkers.length < 2) return null;
+  uniqueMarkers.sort((a, b) => a.index - b.index);
+
+  const options = uniqueMarkers
+    .map((item, index) => {
+      const next = uniqueMarkers[index + 1];
+      const text = raw.slice(item.contentStart, next ? next.index : raw.length).trim();
+      return {
+        key: item.key,
+        text,
+      };
+    })
+    .filter((item) => item.text);
+
+  if (options.length < 2) return null;
+  const stem = raw.slice(0, uniqueMarkers[0].index).trim();
+  if (!stem || stem.length < 6) return null;
+
+  return {
+    stem,
+    options,
+    signature: `${stem}\n${options.map((item) => `${item.key}:${item.text}`).join("\n")}`,
+  };
+}
+
+function syncChoiceQuestion() {
+  const choice = parseChoiceQuestion(dom.input.value);
+  const signature = choice?.signature || "";
+
+  if (signature !== state.choiceSignature) {
+    state.choiceSignature = signature;
+    state.activeChoiceKey = "";
+    state.choiceCache = {};
+  }
+
+  state.choiceQuestion = choice;
+  if (choice && state.activeChoiceKey && !choice.options.some((item) => item.key === state.activeChoiceKey)) {
+    state.activeChoiceKey = "";
+  }
+  renderChoicePanel();
+  return choice;
+}
+
+function renderChoicePanel() {
+  if (!dom.choicePanel || !dom.choiceOptions) return;
+  const choice = state.choiceQuestion;
+  if (!choice) {
+    dom.choicePanel.hidden = true;
+    dom.choiceOptions.innerHTML = "";
+    return;
+  }
+
+  dom.choicePanel.hidden = false;
+  dom.choiceState.textContent = state.activeChoiceKey ? `当前 ${state.activeChoiceKey}` : "点选项看对应情况";
+  dom.choiceOptions.innerHTML = "";
+
+  choice.options.forEach((option) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "choice-option";
+    button.classList.toggle("active", option.key === state.activeChoiceKey);
+    if (state.choiceCache[option.key]) button.classList.add("ready");
+    button.innerHTML = `
+      <strong>${escapeHtml(option.key)}</strong>
+      <span>${escapeHtml(truncateText(option.text, 34))}</span>
+    `;
+    button.addEventListener("click", () => chooseOption(option.key));
+    dom.choiceOptions.appendChild(button);
+  });
+}
+
+function truncateText(text, maxLength) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  return clean.length > maxLength ? `${clean.slice(0, maxLength)}...` : clean;
+}
+
+function chooseOption(key) {
+  const choice = syncChoiceQuestion();
+  if (!choice || !choice.options.some((item) => item.key === key)) return;
+  state.activeChoiceKey = key;
+  renderChoicePanel();
+
+  const cached = state.choiceCache[key];
+  if (cached?.model) {
+    state.pendingViewMode = cached.viewMode || inferViewModeFromText(cached.problemText);
+    renderModel(cached.model);
+    setStatus(`已切换到 ${key} 选项`);
+    return;
+  }
+
+  generateModel({ choiceKey: key });
+}
+
+function getProblemContext(choiceKey = "") {
+  const raw = dom.input.value.trim();
+  const choice = syncChoiceQuestion();
+  if (!choice) {
+    return {
+      rawText: raw,
+      problemText: raw,
+      optionKey: "",
+      optionText: "",
+    };
+  }
+
+  const key = choiceKey || state.activeChoiceKey || choice.options[0]?.key || "";
+  const option = choice.options.find((item) => item.key === key);
+  if (!option) {
+    return {
+      rawText: raw,
+      problemText: raw,
+      optionKey: "",
+      optionText: "",
+    };
+  }
+
+  state.activeChoiceKey = key;
+  renderChoicePanel();
+  return {
+    rawText: raw,
+    problemText: `${choice.stem}\n按 ${key} 选项理解：${option.text}`,
+    optionKey: key,
+    optionText: option.text,
+  };
 }
 
 async function checkBackend() {
@@ -795,6 +1016,13 @@ function renderUserUsage(users) {
 
 function updateProblemHints(text, extraMessage = "") {
   const hints = analyzeProblemText(text);
+  const choice = parseChoiceQuestion(text);
+  if (choice) {
+    hints.unshift({
+      level: "info",
+      text: `检测到选择题：已识别 ${choice.options.map((item) => item.key).join("、")}，点选项可分别生成对应情况。`,
+    });
+  }
   if (extraMessage) hints.unshift({ level: "warn", text: extraMessage });
 
   if (!hints.length) {
@@ -957,6 +1185,7 @@ function renderHistory() {
     button.addEventListener("click", () => {
       dom.input.value = item.text || "";
       updateProblemHints(dom.input.value);
+      syncChoiceQuestion();
       setActiveStep("input");
       setMobilePanel("input");
       closeAssist();
@@ -1134,6 +1363,7 @@ function renderTips(tips, stateText) {
       dom.input.value = tip.text || "";
       dom.input.focus();
       updateProblemHints(dom.input.value);
+      syncChoiceQuestion();
       setActiveStep("input");
       setStatus("已填入 Tips");
     });
@@ -1177,6 +1407,9 @@ function initScene() {
   state.controls = new OrbitControls(state.camera, dom.canvas);
   state.controls.enableDamping = true;
   state.controls.dampingFactor = 0.08;
+  state.controls.enablePan = true;
+  state.controls.touches.ONE = THREE.TOUCH.ROTATE;
+  state.controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
   state.controls.target.set(0, 0, 0.8);
   state.controls.update();
 
@@ -1231,28 +1464,39 @@ function clearAxisLabels() {
   state.labelItems = state.labelItems.filter((item) => item.kind !== "axis");
 }
 
-async function generateModel() {
-  const text = dom.input.value.trim();
-  if (!text) {
+async function generateModel(options = {}) {
+  const context = getProblemContext(options.choiceKey || "");
+  const text = context.problemText.trim();
+  const historyText = context.rawText || text;
+  if (!historyText) {
     setStatus("请先输入题目");
-    updateProblemHints(text, "请先输入一道题，或者点 Tips 选一个模板。");
+    updateProblemHints(historyText, "请先输入一道题，或者点 Tips 选一个模板。");
     return;
   }
 
-  updateProblemHints(text);
+  updateProblemHints(historyText);
+  if (context.optionKey && state.choiceCache[context.optionKey]?.model) {
+    const cached = state.choiceCache[context.optionKey];
+    state.pendingViewMode = cached.viewMode || inferViewModeFromText(cached.problemText);
+    renderModel(cached.model);
+    setStatus(`已切换到 ${context.optionKey} 选项`);
+    return;
+  }
+
   state.pendingViewMode = inferViewModeFromText(text);
   setLoading(true);
   setActiveStep("parse");
-  setStatus("正在解析题目...");
+  setStatus(context.optionKey ? `正在解析 ${context.optionKey} 选项...` : "正在解析题目...");
 
   try {
     await sleep(80);
     try {
       const model = buildModelFromText(text);
       model.source = "local";
+      cacheChoiceModel(context, model);
       renderModel(model);
-      setStatus(`已生成 ${model.title}`);
-      saveHistory({ text, title: model.title, source: "local", status: "success" });
+      setStatus(context.optionKey ? `已生成 ${context.optionKey} 选项：${model.title}` : `已生成 ${model.title}`);
+      saveHistory({ text: historyText, title: formatHistoryTitle(model.title, context), source: "local", status: "success" });
       recordUsage({ source: "local", success: true, text, modelTitle: model.title });
       return;
     } catch (localError) {
@@ -1263,22 +1507,37 @@ async function generateModel() {
       aiModel.source = "ai";
       centerModelOnXY(aiModel);
       aiModel.equations = aiModel.equations?.length ? aiModel.equations : buildModelEquations(aiModel);
+      cacheChoiceModel(context, aiModel);
       renderModel(aiModel);
-      setStatus(`DeepSeek 已生成 ${aiModel.title}`);
-      saveHistory({ text, title: aiModel.title, source: "ai", status: "success" });
+      setStatus(context.optionKey ? `DeepSeek 已生成 ${context.optionKey} 选项：${aiModel.title}` : `DeepSeek 已生成 ${aiModel.title}`);
+      saveHistory({ text: historyText, title: formatHistoryTitle(aiModel.title, context), source: "ai", status: "success" });
       return;
     }
   } catch (error) {
     clearGeneratedModel();
     showParseError(error);
     setActiveStep("parse");
-    saveHistory({ text, title: "解析失败", source: state.backendAvailable ? "ai" : "local", status: "failure", error: error.message });
+    saveHistory({ text: historyText, title: "解析失败", source: state.backendAvailable ? "ai" : "local", status: "failure", error: error.message });
     if (!state.backendAvailable) {
       recordUsage({ source: "local", success: false, text, error: error.message });
     }
   } finally {
     setLoading(false);
   }
+}
+
+function cacheChoiceModel(context, model) {
+  if (!context.optionKey) return;
+  state.choiceCache[context.optionKey] = {
+    model,
+    problemText: context.problemText,
+    viewMode: state.pendingViewMode || inferViewModeFromModel(model),
+  };
+  renderChoicePanel();
+}
+
+function formatHistoryTitle(title, context) {
+  return context.optionKey ? `${title} · ${context.optionKey}选项` : title;
 }
 
 function buildModelFromText(rawText) {
@@ -1653,7 +1912,12 @@ function selectModelMeasurement() {
   const parts = [`总表面积 ${formatNumber(metrics.totalFaceArea)}`];
   if (metrics.volume > 0) parts.push(`体积 ${formatNumber(metrics.volume)}`);
   else parts.push("平面图形体积为 0");
-  dom.selectedBox.innerHTML = `<strong>${state.currentModel.title}</strong><span>${parts.join("，")}。</span>`;
+  const data = {
+    label: state.currentModel.title,
+    detail: `${parts.join("，")}。`,
+  };
+  dom.selectedBox.innerHTML = `<strong>${data.label}</strong><span>${data.detail}</span>`;
+  showElementToast(data);
   setActiveStep("inspect");
   if (window.matchMedia("(max-width: 820px)").matches) setMobilePanel("info");
 }
@@ -1957,6 +2221,7 @@ function clearGeneratedModel() {
   dom.equationList.innerHTML = "";
   dom.elementList.innerHTML = "";
   updateSelectedBox(null);
+  hideElementToast();
 }
 
 function disposeObject(object) {
@@ -2038,17 +2303,74 @@ function renderElementList(model) {
 
 function handlePointerDown(event) {
   if (!state.currentModel) return;
+  state.longPressTriggered = false;
+  clearLongPressTimer();
+  state.pointerDown = {
+    pointerId: event.pointerId,
+    pointerType: event.pointerType,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    moved: false,
+  };
+
+  if (event.pointerType === "touch") {
+    state.longPressTimer = window.setTimeout(() => {
+      if (!state.pointerDown || state.pointerDown.moved) return;
+      state.longPressTriggered = true;
+      selectElementAt(state.pointerDown.clientX, state.pointerDown.clientY, { openInfo: true });
+    }, 520);
+  }
+}
+
+function handlePointerMove(event) {
+  if (!state.pointerDown || state.pointerDown.pointerId !== event.pointerId) return;
+  const distance = Math.hypot(event.clientX - state.pointerDown.clientX, event.clientY - state.pointerDown.clientY);
+  if (distance > 8) {
+    state.pointerDown.moved = true;
+    clearLongPressTimer();
+  }
+}
+
+function handlePointerUp(event) {
+  if (!state.pointerDown || state.pointerDown.pointerId !== event.pointerId) return;
+  const pointer = state.pointerDown;
+  clearLongPressTimer();
+  state.pointerDown = null;
+
+  const distance = Math.hypot(event.clientX - pointer.clientX, event.clientY - pointer.clientY);
+  if (state.longPressTriggered || pointer.moved || distance > 8) {
+    state.longPressTriggered = false;
+    return;
+  }
+
+  selectElementAt(event.clientX, event.clientY, { openInfo: false });
+}
+
+function clearPointerTracking() {
+  state.pointerDown = null;
+  state.longPressTriggered = false;
+  clearLongPressTimer();
+}
+
+function clearLongPressTimer() {
+  if (!state.longPressTimer) return;
+  window.clearTimeout(state.longPressTimer);
+  state.longPressTimer = null;
+}
+
+function selectElementAt(clientX, clientY, options = {}) {
+  if (!state.currentModel) return;
   const rect = dom.canvas.getBoundingClientRect();
-  state.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  state.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  state.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  state.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
   state.raycaster.setFromCamera(state.pointer, state.camera);
   const intersects = state.raycaster.intersectObjects(state.interactiveObjects, false);
   if (!intersects.length) return;
   const object = intersects[0].object;
-  selectElement(object.userData.elementId);
+  selectElement(object.userData.elementId, options);
 }
 
-function selectElement(elementId) {
+function selectElement(elementId, options = {}) {
   if (elementId === "measure:model") {
     selectModelMeasurement();
     return;
@@ -2061,11 +2383,12 @@ function selectElement(elementId) {
   objects.forEach((object) => setHighlight(object, true));
   state.selectedElementId = elementId;
   updateSelectedBox(objects[0].userData);
+  showElementToast(objects[0].userData);
   setActiveStep("inspect");
 
   if (state.measureMode && objects[0].userData.type === "point") {
     handleMeasurePoint(objects[0].userData.pointLabel);
-  } else if (window.matchMedia("(max-width: 820px)").matches) {
+  } else if (options.openInfo && window.matchMedia("(max-width: 820px)").matches) {
     setMobilePanel("info");
   }
 }
@@ -2082,10 +2405,23 @@ function setHighlight(object, active) {
 
 function updateSelectedBox(data) {
   if (!data) {
-    dom.selectedBox.innerHTML = "<strong>未选择</strong><span>点击模型中的点、线或面。</span>";
+    dom.selectedBox.innerHTML = "<strong>未选择</strong><span>点击模型中的点、线或面；手机端长按可直接展开详情。</span>";
     return;
   }
   dom.selectedBox.innerHTML = `<strong>${data.label}</strong><span>${data.detail}</span>`;
+}
+
+function showElementToast(data) {
+  if (!dom.elementToast || !data) return;
+  dom.elementToastTitle.textContent = data.label || "当前元素";
+  dom.elementToastDetail.textContent = data.detail || "已选中元素。";
+  dom.elementToast.hidden = false;
+  setStatus(`${data.label || "元素"} 已选中`);
+}
+
+function hideElementToast() {
+  if (!dom.elementToast) return;
+  dom.elementToast.hidden = true;
 }
 
 function toggleMeasureMode() {
@@ -2281,6 +2617,10 @@ function updateLabels() {
   const width = dom.sceneWrap.clientWidth;
   const height = dom.sceneWrap.clientHeight;
   state.labelItems.forEach((item) => {
+    if (item.kind === "axis" && state.viewMode === "2d") {
+      item.el.style.display = "none";
+      return;
+    }
     const projected = item.position.clone().project(state.camera);
     const visible = projected.z > -1 && projected.z < 1;
     item.el.style.display = visible ? "grid" : "none";

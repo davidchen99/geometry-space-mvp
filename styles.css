@@ -208,6 +208,7 @@ button {
 }
 
 .problem-card,
+.choice-panel,
 .samples,
 .tips-panel,
 .parse-panel,
@@ -219,6 +220,7 @@ button {
 }
 
 .problem-card,
+.choice-panel,
 .samples,
 .tips-panel,
 .parse-panel,
@@ -434,6 +436,57 @@ button {
   white-space: nowrap;
 }
 
+.choice-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.choice-option {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  min-height: 58px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--ink);
+  text-align: left;
+}
+
+.choice-option strong {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.choice-option span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.choice-option.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.choice-option.active strong,
+.choice-option.ready strong {
+  background: var(--accent);
+  color: #fff;
+}
+
 .parse-badge {
   padding: 4px 8px;
   border-radius: 999px;
@@ -464,6 +517,7 @@ button {
   display: block;
   width: 100%;
   height: 100%;
+  touch-action: none;
 }
 
 .viewer-header {
@@ -587,6 +641,42 @@ button {
   border-radius: 8px;
   color: #354250;
   font-size: 13px;
+}
+
+.element-toast {
+  position: absolute;
+  z-index: 9;
+  left: 14px;
+  bottom: 64px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: min(460px, calc(100% - 28px));
+  padding: 10px;
+  border: 1px solid rgba(217, 225, 234, 0.94);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+}
+
+.element-toast strong,
+.element-toast span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.element-toast strong {
+  font-size: 13px;
+}
+
+.element-toast span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .assist-dock {
@@ -1287,7 +1377,7 @@ button {
 
 @media (max-width: 820px) {
   :root {
-    --topbar-h: 112px;
+    --topbar-h: 56px;
   }
 
   body {
@@ -1304,9 +1394,9 @@ button {
   .top-bar {
     position: relative;
     min-height: var(--topbar-h);
-    grid-template-columns: 1fr auto;
-    gap: 8px;
-    padding: 9px 10px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 7px;
+    padding: 8px 10px;
   }
 
   .brand {
@@ -1316,13 +1406,13 @@ button {
   }
 
   .brand-mark {
-    width: 38px;
-    height: 38px;
-    font-size: 21px;
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
   }
 
   .brand h1 {
-    font-size: 18px;
+    font-size: 17px;
   }
 
   .brand p {
@@ -1332,23 +1422,28 @@ button {
   .admin-entry {
     grid-column: 2;
     grid-row: 1;
-    min-height: 36px;
-    padding: 0 10px;
+    width: 38px;
+    min-height: 38px;
+    padding: 0;
+    font-size: 0;
   }
 
   .user-entry {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 1;
-    min-height: 36px;
-    max-width: 82px;
-    padding: 0 9px;
-    transform: translateY(42px);
+    width: 38px;
+    min-height: 38px;
+    padding: 0;
+    font-size: 0;
+    transform: none;
+  }
+
+  .user-entry span {
+    display: none;
   }
 
   .step-rail {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    gap: 6px;
+    display: none;
   }
 
   .step-pill {
@@ -1376,9 +1471,11 @@ button {
   }
 
   .viewer-header {
-    top: 10px;
+    top: 8px;
     left: 10px;
     right: 10px;
+    align-items: center;
+    gap: 8px;
   }
 
   .viewer-label {
@@ -1390,10 +1487,13 @@ button {
     flex: 1 1 auto;
     justify-content: space-between;
     border-radius: 8px;
+    padding: 5px;
   }
 
   .concept-step {
-    padding: 0 7px;
+    min-height: 26px;
+    padding: 0 6px;
+    font-size: 11px;
   }
 
   .view-toggle {
@@ -1407,34 +1507,57 @@ button {
   }
 
   .viewer-toolbar {
-    top: 60px;
-    left: 10px;
+    top: 58px;
+    left: auto;
     right: 10px;
-    justify-content: center;
-    overflow-x: auto;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 6px;
+    overflow: visible;
+  }
+
+  .tool-button {
+    width: 36px;
+    height: 36px;
   }
 
   .viewer-status {
     left: 10px;
     right: 10px;
-    bottom: 124px;
+    bottom: 72px;
     max-width: none;
     font-size: 12px;
   }
 
-  .assist-dock {
+  .element-toast {
     left: 10px;
+    right: 58px;
+    bottom: 126px;
+    width: auto;
+    padding: 9px;
+  }
+
+  .assist-dock {
+    left: auto;
     right: 10px;
-    bottom: 68px;
-    justify-content: center;
-    overflow-x: auto;
+    bottom: 72px;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 6px;
+    overflow: visible;
   }
 
   .assist-chip {
-    flex: 1 0 auto;
-    min-width: 0;
-    padding: 0 8px;
-    font-size: 12px;
+    width: 36px;
+    min-height: 36px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .assist-chip span {
+    display: none;
   }
 
   .input-panel,
@@ -1444,11 +1567,11 @@ button {
     top: auto;
     left: 10px;
     right: 10px;
-    bottom: 74px;
+    bottom: 70px;
     width: auto;
     min-width: 0;
-    max-height: min(74dvh, 660px);
-    padding: 12px;
+    max-height: min(62dvh, 560px);
+    padding: 10px;
     border: 1px solid var(--line);
     border-radius: 8px;
     box-shadow: 0 20px 54px rgba(15, 24, 34, 0.24);
@@ -1471,15 +1594,67 @@ button {
   }
 
   .primary-actions {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .secondary-button.compact {
-    grid-column: 1 / -1;
+  #selectAllBtn {
+    display: none;
   }
 
   #problemInput {
-    min-height: 150px;
+    min-height: 112px;
+    margin-top: 9px;
+    line-height: 1.55;
+  }
+
+  .panel-heading h2 {
+    font-size: 17px;
+  }
+
+  .samples,
+  .tips-panel,
+  .choice-panel,
+  .parse-panel,
+  .inspect-panel,
+  .problem-card {
+    padding: 10px;
+  }
+
+  .sample-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .sample-button {
+    min-height: 46px;
+    padding: 8px;
+  }
+
+  .sample-button strong {
+    font-size: 13px;
+  }
+
+  .sample-button span {
+    display: none;
+  }
+
+  .choice-options {
+    gap: 6px;
+  }
+
+  .choice-option {
+    min-height: 48px;
+    padding: 7px;
+  }
+
+  .choice-option span {
+    display: none;
+  }
+
+  .relation-list,
+  .equation-list,
+  .element-list {
+    max-height: 154px;
+    overflow: auto;
   }
 
   .mobile-nav {
@@ -1518,9 +1693,9 @@ button {
   .assist-drawer {
     left: 10px;
     right: 10px;
-    bottom: 74px;
+    bottom: 70px;
     width: auto;
-    max-height: min(70dvh, 620px);
+    max-height: min(58dvh, 540px);
   }
 
   .help-mode [data-help]::after {
