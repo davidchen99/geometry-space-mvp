@@ -29,9 +29,37 @@ const samples = [
   },
 ];
 
+const starterTips = [
+  {
+    title: "正方体中点连线",
+    meta: "图形 + 边长 + 中点 + 连接线",
+    text: "正方体ABCD-A1B1C1D1，边长为2，E是AB的中点，连接EC1。",
+  },
+  {
+    title: "长方体比例尺寸",
+    meta: "三向长度 + 特殊点 + 连线",
+    text: "长方体ABCD-A1B1C1D1，AB=3，BC=2，AA1=2，M是CC1的中点，连接AM。",
+  },
+  {
+    title: "三棱锥垂直关系",
+    meta: "线面垂直 + 底面直角",
+    text: "三棱锥P-ABC，PA垂直于平面ABC，AB垂直于BC，PA=AB=BC=1，连接PB、PC。",
+  },
+  {
+    title: "四棱锥底面中心",
+    meta: "底面 + 中心 + 高",
+    text: "四棱锥P-ABCD，底面ABCD是正方形，AB=2，O是AC和BD的交点，PO垂直于平面ABCD，PO=2，连接PA、PB、PC、PD。",
+  },
+];
+
 const dom = {
+  appShell: document.querySelector("#appShell"),
   input: document.querySelector("#problemInput"),
   generateBtn: document.querySelector("#generateBtn"),
+  tipsBtn: document.querySelector("#tipsBtn"),
+  tipsPanel: document.querySelector("#tipsPanel"),
+  tipsList: document.querySelector("#tipsList"),
+  tipsState: document.querySelector("#tipsState"),
   clearBtn: document.querySelector("#clearBtn"),
   selectAllBtn: document.querySelector("#selectAllBtn"),
   sampleList: document.querySelector("#sampleList"),
@@ -51,6 +79,39 @@ const dom = {
   canvas: document.querySelector("#sceneCanvas"),
   labelLayer: document.querySelector("#labelLayer"),
   emptyState: document.querySelector("#emptyState"),
+  adminOpenBtn: document.querySelector("#adminOpenBtn"),
+  adminModal: document.querySelector("#adminModal"),
+  adminCloseBtn: document.querySelector("#adminCloseBtn"),
+  adminCloseBackdrop: document.querySelector("#adminCloseBackdrop"),
+  adminLogin: document.querySelector("#adminLogin"),
+  adminBoard: document.querySelector("#adminBoard"),
+  adminUsername: document.querySelector("#adminUsername"),
+  adminPassword: document.querySelector("#adminPassword"),
+  adminLoginBtn: document.querySelector("#adminLoginBtn"),
+  adminLoginHint: document.querySelector("#adminLoginHint"),
+  configForm: document.querySelector("#configForm"),
+  apiKeyInput: document.querySelector("#apiKeyInput"),
+  endpointInput: document.querySelector("#endpointInput"),
+  modelInput: document.querySelector("#modelInput"),
+  dailyLimitInput: document.querySelector("#dailyLimitInput"),
+  aiEnabledInput: document.querySelector("#aiEnabledInput"),
+  promptInput: document.querySelector("#promptInput"),
+  apiKeyState: document.querySelector("#apiKeyState"),
+  clearApiKeyBtn: document.querySelector("#clearApiKeyBtn"),
+  configHint: document.querySelector("#configHint"),
+  passwordForm: document.querySelector("#passwordForm"),
+  oldPasswordInput: document.querySelector("#oldPasswordInput"),
+  newPasswordInput: document.querySelector("#newPasswordInput"),
+  passwordHint: document.querySelector("#passwordHint"),
+  refreshStatsBtn: document.querySelector("#refreshStatsBtn"),
+  recentList: document.querySelector("#recentList"),
+  statVisits: document.querySelector("#statVisits"),
+  statGenerations: document.querySelector("#statGenerations"),
+  statAi: document.querySelector("#statAi"),
+  statSuccess: document.querySelector("#statSuccess"),
+  stepButtons: Array.from(document.querySelectorAll("[data-step]")),
+  conceptSteps: Array.from(document.querySelectorAll("[data-concept]")),
+  mobileTabs: Array.from(document.querySelectorAll(".mobile-tab[data-mobile-panel]")),
 };
 
 const state = {
@@ -73,6 +134,9 @@ const state = {
   measurePoints: [],
   gridVisible: true,
   auxVisible: true,
+  backendAvailable: false,
+  adminToken: localStorage.getItem("geometry-space-admin-token") || "",
+  activeStep: "input",
 };
 
 const colors = {
@@ -101,6 +165,7 @@ function initUI() {
     button.innerHTML = `<strong>${sample.title}</strong><span>${sample.meta}</span>`;
     button.addEventListener("click", () => {
       dom.input.value = sample.text;
+      setActiveStep("input");
       generateModel();
     });
     if (index === 0) {
@@ -110,10 +175,13 @@ function initUI() {
   });
 
   dom.generateBtn.addEventListener("click", generateModel);
+  dom.tipsBtn.addEventListener("click", showInputTips);
   dom.clearBtn.addEventListener("click", () => {
     dom.input.value = "";
     dom.input.focus();
     clearGeneratedModel();
+    setActiveStep("input");
+    setMobilePanel("input");
     setStatus("已清空题目");
   });
   dom.selectAllBtn.addEventListener("click", () => {
@@ -126,6 +194,7 @@ function initUI() {
       generateModel();
     }
   });
+  dom.input.addEventListener("focus", () => setActiveStep("input"));
 
   dom.resetViewBtn.addEventListener("click", resetCameraToModel);
   dom.gridBtn.addEventListener("click", () => {
@@ -141,11 +210,394 @@ function initUI() {
   dom.measureBtn.addEventListener("click", toggleMeasureMode);
   dom.screenshotBtn.addEventListener("click", exportScreenshot);
 
+  dom.stepButtons.forEach((button) => {
+    button.addEventListener("click", () => handleStepNavigation(button.dataset.step));
+  });
+  dom.mobileTabs.forEach((button) => {
+    button.addEventListener("click", () => setMobilePanel(button.dataset.mobilePanel || "none"));
+  });
+
   dom.canvas.addEventListener("pointerdown", handlePointerDown);
   window.addEventListener("resize", resizeRenderer);
 
+  initAdminUI();
+  checkBackend();
+  recordVisit();
   window.lucide?.createIcons();
   generateModel();
+  if (window.location.hash === "#admin") {
+    openAdminModal();
+  }
+}
+
+function initAdminUI() {
+  dom.adminOpenBtn.addEventListener("click", openAdminModal);
+  dom.adminCloseBtn.addEventListener("click", closeAdminModal);
+  dom.adminCloseBackdrop.addEventListener("click", closeAdminModal);
+  dom.adminLoginBtn.addEventListener("click", adminLogin);
+  dom.adminPassword.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") adminLogin();
+  });
+  dom.configForm.addEventListener("submit", saveAdminConfig);
+  dom.clearApiKeyBtn.addEventListener("click", clearApiKey);
+  dom.passwordForm.addEventListener("submit", changeAdminPassword);
+  dom.refreshStatsBtn.addEventListener("click", loadAdminDashboard);
+}
+
+function handleStepNavigation(step) {
+  setActiveStep(step);
+  if (step === "input") {
+    setMobilePanel("input");
+    dom.input.focus();
+    return;
+  }
+  if (step === "parse" || step === "inspect") {
+    setMobilePanel("info");
+    return;
+  }
+  if (step === "model") {
+    setMobilePanel("none");
+    resetCameraToModel();
+    return;
+  }
+  if (step === "output") {
+    setMobilePanel("none");
+  }
+}
+
+function setActiveStep(step) {
+  state.activeStep = step;
+  dom.stepButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.step === step);
+  });
+
+  const conceptStep = step === "inspect" || step === "output" ? "inspect" : step;
+  dom.conceptSteps.forEach((item) => {
+    item.classList.toggle("active", item.dataset.concept === conceptStep);
+  });
+}
+
+function setMobilePanel(panel) {
+  if (!dom.appShell) return;
+  dom.appShell.dataset.mobilePanel = panel || "none";
+  dom.mobileTabs.forEach((button) => {
+    button.classList.toggle("active", button.dataset.mobilePanel === dom.appShell.dataset.mobilePanel);
+  });
+}
+
+function closeMobilePanel() {
+  if (window.matchMedia("(max-width: 820px)").matches) {
+    setMobilePanel("none");
+  }
+}
+
+async function checkBackend() {
+  try {
+    const data = await apiFetch("/api/health");
+    state.backendAvailable = Boolean(data.ok);
+    if (data.config?.apiKeySet) {
+      setStatus("准备就绪：本地解析 + DeepSeek 后端可用");
+    }
+  } catch {
+    state.backendAvailable = false;
+  }
+}
+
+function recordVisit() {
+  apiFetch("/api/visit", { method: "POST" }).catch(() => {});
+}
+
+function recordUsage(payload) {
+  apiFetch("/api/usage", {
+    method: "POST",
+    body: payload,
+  }).catch(() => {});
+}
+
+async function requestBackendParse(text) {
+  const data = await apiFetch("/api/parse", {
+    method: "POST",
+    body: { text },
+  });
+  if (!data.ok || !data.model) {
+    throw new Error(data.error || "AI 解析失败");
+  }
+  return data.model;
+}
+
+async function requestBackendTips(text) {
+  return apiFetch("/api/tips", {
+    method: "POST",
+    body: { text },
+  });
+}
+
+async function apiFetch(url, options = {}) {
+  const headers = {
+    Accept: "application/json",
+    ...(options.headers || {}),
+  };
+  const request = {
+    method: options.method || "GET",
+    headers,
+  };
+  if (options.body !== undefined) {
+    request.headers["Content-Type"] = "application/json";
+    request.body = JSON.stringify(options.body);
+  }
+  const response = await fetch(url, request);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || `请求失败：${response.status}`);
+  }
+  return data;
+}
+
+function adminHeaders() {
+  return {
+    Authorization: `Bearer ${state.adminToken}`,
+  };
+}
+
+function openAdminModal() {
+  dom.adminModal.classList.add("open");
+  dom.adminModal.setAttribute("aria-hidden", "false");
+  if (state.adminToken) {
+    loadAdminDashboard().catch(() => showAdminLogin("登录已过期，请重新登录"));
+  } else {
+    showAdminLogin();
+  }
+  window.lucide?.createIcons();
+}
+
+function closeAdminModal() {
+  dom.adminModal.classList.remove("open");
+  dom.adminModal.setAttribute("aria-hidden", "true");
+}
+
+function showAdminLogin(message = "") {
+  dom.adminLogin.hidden = false;
+  dom.adminBoard.hidden = true;
+  dom.adminLoginHint.textContent = message || "初始账号 admin，密码 123456。部署公网后请先改密码。";
+}
+
+function showAdminBoard() {
+  dom.adminLogin.hidden = true;
+  dom.adminBoard.hidden = false;
+}
+
+async function adminLogin() {
+  dom.adminLoginHint.textContent = "正在登录...";
+  try {
+    const data = await apiFetch("/api/admin/login", {
+      method: "POST",
+      body: {
+        username: dom.adminUsername.value.trim(),
+        password: dom.adminPassword.value,
+      },
+    });
+    state.adminToken = data.token;
+    localStorage.setItem("geometry-space-admin-token", state.adminToken);
+    showAdminBoard();
+    fillAdminConfig(data.config);
+    renderStats(data.stats);
+    dom.adminLoginHint.textContent = "登录成功";
+  } catch (error) {
+    showAdminLogin(error.message);
+  }
+}
+
+async function loadAdminDashboard() {
+  const [configData, statsData] = await Promise.all([
+    apiFetch("/api/admin/config", { headers: adminHeaders() }),
+    apiFetch("/api/admin/stats", { headers: adminHeaders() }),
+  ]);
+  showAdminBoard();
+  fillAdminConfig(configData.config);
+  renderStats(statsData.stats);
+  window.lucide?.createIcons();
+}
+
+function fillAdminConfig(config) {
+  dom.apiKeyInput.value = "";
+  dom.endpointInput.value = config.endpoint || "";
+  dom.modelInput.value = config.model || "";
+  dom.dailyLimitInput.value = config.dailyLimit || 200;
+  dom.aiEnabledInput.checked = Boolean(config.aiEnabled);
+  dom.promptInput.value = config.promptTemplate || "";
+  dom.apiKeyState.textContent = config.apiKeySet ? `已配置 ${config.apiKeyMask}` : "未配置";
+}
+
+function renderStats(stats) {
+  dom.statVisits.textContent = stats.totalVisits || 0;
+  dom.statGenerations.textContent = stats.totalGenerations || 0;
+  dom.statAi.textContent = stats.aiRequests || 0;
+  dom.statSuccess.textContent = `${stats.successRate || 0}%`;
+  dom.recentList.innerHTML = "";
+
+  if (!stats.recent?.length) {
+    dom.recentList.innerHTML = '<div class="recent-item"><span>暂无记录</span></div>';
+    return;
+  }
+
+  stats.recent.slice(0, 20).forEach((item) => {
+    const el = document.createElement("div");
+    el.className = "recent-item";
+    const statusClass = item.status === "success" ? "recent-ok" : "recent-fail";
+    const statusText = item.status === "success" ? "成功" : "失败";
+    el.innerHTML = `
+      <strong class="${statusClass}">${item.source || "local"} · ${statusText}</strong>
+      <span>${escapeHtml(item.text || "无题目")}</span>
+      <span>${escapeHtml(item.modelTitle || item.error || "")}</span>
+    `;
+    dom.recentList.appendChild(el);
+  });
+}
+
+async function saveAdminConfig(event) {
+  event.preventDefault();
+  dom.configHint.textContent = "正在保存...";
+  try {
+    const data = await apiFetch("/api/admin/config", {
+      method: "PUT",
+      headers: adminHeaders(),
+      body: {
+        apiKey: dom.apiKeyInput.value.trim(),
+        endpoint: dom.endpointInput.value.trim(),
+        model: dom.modelInput.value.trim(),
+        dailyLimit: Number(dom.dailyLimitInput.value),
+        aiEnabled: dom.aiEnabledInput.checked,
+        promptTemplate: dom.promptInput.value,
+      },
+    });
+    fillAdminConfig(data.config);
+    dom.configHint.textContent = "已保存。普通用户不会看到 API Key。";
+    state.backendAvailable = true;
+  } catch (error) {
+    dom.configHint.textContent = error.message;
+  }
+}
+
+async function clearApiKey() {
+  dom.configHint.textContent = "正在清除 API Key...";
+  try {
+    const data = await apiFetch("/api/admin/config", {
+      method: "PUT",
+      headers: adminHeaders(),
+      body: {
+        endpoint: dom.endpointInput.value.trim(),
+        model: dom.modelInput.value.trim(),
+        dailyLimit: Number(dom.dailyLimitInput.value),
+        aiEnabled: dom.aiEnabledInput.checked,
+        promptTemplate: dom.promptInput.value,
+        clearApiKey: true,
+      },
+    });
+    fillAdminConfig(data.config);
+    dom.configHint.textContent = "API Key 已清除。";
+  } catch (error) {
+    dom.configHint.textContent = error.message;
+  }
+}
+
+async function changeAdminPassword(event) {
+  event.preventDefault();
+  dom.passwordHint.textContent = "正在更新...";
+  try {
+    await apiFetch("/api/admin/password", {
+      method: "PUT",
+      headers: adminHeaders(),
+      body: {
+        oldPassword: dom.oldPasswordInput.value,
+        newPassword: dom.newPasswordInput.value,
+      },
+    });
+    dom.oldPasswordInput.value = "";
+    dom.newPasswordInput.value = "";
+    dom.passwordHint.textContent = "密码已更新。";
+  } catch (error) {
+    dom.passwordHint.textContent = error.message;
+  }
+}
+
+async function showInputTips() {
+  const text = dom.input.value.trim();
+  dom.tipsPanel.hidden = false;
+  setActiveStep("input");
+  setMobilePanel("input");
+  renderTips(buildLocalTips(text), "常用表达");
+  dom.tipsState.textContent = "正在获取";
+  setStatus("正在准备输入 Tips...");
+
+  try {
+    const data = await requestBackendTips(text);
+    const tips = Array.isArray(data.tips) && data.tips.length ? data.tips : buildLocalTips(text);
+    renderTips(tips, data.source === "ai" ? "AI Tips" : "常用表达");
+    setStatus(data.source === "ai" ? "AI Tips 已更新" : "Tips 已就绪");
+  } catch (error) {
+    renderTips(buildLocalTips(text), "常用表达");
+    setStatus(`Tips 已就绪：${error.message}`);
+  } finally {
+    window.lucide?.createIcons();
+  }
+}
+
+function buildLocalTips(text) {
+  const clean = String(text || "").trim();
+  const tips = [];
+
+  if (clean) {
+    tips.push({
+      title: "整理当前题目",
+      meta: "补齐图形、长度、关系、连线",
+      text: clean.endsWith("。") || clean.endsWith(".") ? clean : `${clean}。`,
+    });
+  }
+
+  const matched = starterTips.filter((tip) => {
+    if (!clean) return true;
+    return clean.includes(tip.title.slice(0, 3)) || tip.text.includes(clean.slice(0, 3));
+  });
+  const pool = matched.length ? matched : starterTips;
+  pool.forEach((tip) => tips.push(tip));
+
+  return tips.slice(0, 5);
+}
+
+function renderTips(tips, stateText) {
+  dom.tipsState.textContent = stateText;
+  dom.tipsList.innerHTML = "";
+
+  tips.forEach((tip) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "tip-button";
+    button.innerHTML = `
+      <strong>${escapeHtml(tip.title || "输入建议")}</strong>
+      <span>${escapeHtml(tip.meta || "可直接使用")}</span>
+      <code>${escapeHtml(tip.text || "")}</code>
+    `;
+    button.addEventListener("click", () => {
+      dom.input.value = tip.text || "";
+      dom.input.focus();
+      setActiveStep("input");
+      setStatus("已填入 Tips");
+    });
+    dom.tipsList.appendChild(button);
+  });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function initScene() {
@@ -221,7 +673,7 @@ function clearAxisLabels() {
   state.labelItems = state.labelItems.filter((item) => item.kind !== "axis");
 }
 
-function generateModel() {
+async function generateModel() {
   const text = dom.input.value.trim();
   if (!text) {
     setStatus("请先输入题目");
@@ -229,20 +681,39 @@ function generateModel() {
   }
 
   setLoading(true);
+  setActiveStep("parse");
   setStatus("正在解析题目...");
 
-  window.setTimeout(() => {
+  try {
+    await sleep(80);
     try {
       const model = buildModelFromText(text);
+      model.source = "local";
       renderModel(model);
       setStatus(`已生成 ${model.title}`);
-    } catch (error) {
-      clearGeneratedModel();
-      showParseError(error);
-    } finally {
-      setLoading(false);
+      recordUsage({ source: "local", success: true, text, modelTitle: model.title });
+      return;
+    } catch (localError) {
+      if (!state.backendAvailable) await checkBackend();
+      if (!state.backendAvailable) throw localError;
+      setStatus("本地规则未识别，正在请求 DeepSeek...");
+      const aiModel = await requestBackendParse(text);
+      aiModel.source = "ai";
+      centerModelOnXY(aiModel);
+      renderModel(aiModel);
+      setStatus(`DeepSeek 已生成 ${aiModel.title}`);
+      return;
     }
-  }, 80);
+  } catch (error) {
+    clearGeneratedModel();
+    showParseError(error);
+    setActiveStep("parse");
+    if (!state.backendAvailable) {
+      recordUsage({ source: "local", success: false, text, error: error.message });
+    }
+  } finally {
+    setLoading(false);
+  }
 }
 
 function buildModelFromText(rawText) {
@@ -265,6 +736,7 @@ function buildModelFromText(rawText) {
 
   applyTextFeatures(model, text);
   centerModelOnXY(model);
+  model.source = "local";
   return model;
 }
 
@@ -688,6 +1160,8 @@ function renderModel(model) {
   renderElementList(model);
   resetCameraToModel();
   dom.emptyState.classList.add("hide");
+  setActiveStep("model");
+  closeMobilePanel();
 }
 
 function renderFace(model, face, index) {
@@ -850,7 +1324,7 @@ function renderModelInfo(model) {
     item.textContent = relation;
     dom.relationList.appendChild(item);
   });
-  dom.parseBadge.textContent = "本地规则解析";
+  dom.parseBadge.textContent = model.source === "ai" ? "DeepSeek 解析" : "本地规则解析";
 }
 
 function renderElementList(model) {
@@ -909,9 +1383,12 @@ function selectElement(elementId) {
   objects.forEach((object) => setHighlight(object, true));
   state.selectedElementId = elementId;
   updateSelectedBox(objects[0].userData);
+  setActiveStep("inspect");
 
   if (state.measureMode && objects[0].userData.type === "point") {
     handleMeasurePoint(objects[0].userData.pointLabel);
+  } else if (window.matchMedia("(max-width: 820px)").matches) {
+    setMobilePanel("info");
   }
 }
 
@@ -941,6 +1418,8 @@ function toggleMeasureMode() {
   state.measureMode = !state.measureMode;
   state.measurePoints = [];
   dom.measureBtn.classList.toggle("active", state.measureMode);
+  setActiveStep("inspect");
+  closeMobilePanel();
   setStatus(state.measureMode ? "测距：选择两个点" : "已退出测距");
 }
 
@@ -963,6 +1442,8 @@ function handleMeasurePoint(pointLabel) {
   state.measurePoints = [];
   const detail = `${first}${second} 距离 ${formatNumber(distance)}。`;
   dom.selectedBox.innerHTML = `<strong>测距结果</strong><span>${detail}</span>`;
+  setActiveStep("output");
+  if (window.matchMedia("(max-width: 820px)").matches) setMobilePanel("info");
   setStatus(detail);
 }
 
@@ -1015,6 +1496,7 @@ function exportScreenshot() {
   link.download = "几何空间模型.png";
   link.href = dom.canvas.toDataURL("image/png");
   link.click();
+  setActiveStep("output");
   setStatus("图片已导出");
 }
 
@@ -1022,6 +1504,7 @@ function showParseError(error) {
   dom.title.textContent = "解析失败";
   dom.summary.textContent = `${error.message} 当前 MVP 优先支持常见正方体、长方体、三棱锥、四棱锥和三角形。`;
   dom.relationList.innerHTML = "";
+  setMobilePanel("info");
   setStatus("解析失败，请换用更明确的题目描述");
 }
 
@@ -1099,27 +1582,8 @@ function buildDeepSeekPrompt(problemText) {
   return `你是几何题结构化解析器。请把题目解析为 JSON，字段包括 points、segments、faces、relations、solidType。只输出 JSON。\n题目：${problemText}`;
 }
 
-async function requestDeepSeekParse(problemText, apiKey, endpoint = "https://api.deepseek.com/chat/completions") {
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: "你只返回可被 JSON.parse 解析的几何结构数据。" },
-        { role: "user", content: buildDeepSeekPrompt(problemText) },
-      ],
-      temperature: 0.1,
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`DeepSeek 请求失败：${response.status}`);
-  }
-  const data = await response.json();
-  return JSON.parse(data.choices?.[0]?.message?.content || "{}");
+async function requestDeepSeekParse(problemText) {
+  return requestBackendParse(problemText);
 }
 
 window.GeometrySpaceAI = {

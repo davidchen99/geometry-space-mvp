@@ -1,0 +1,12 @@
+{
+  "name": "geometry-space-mvp",
+  "version": "0.2.0",
+  "private": true,
+  "description": "几何空间：数学题文字转图形理解工具",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

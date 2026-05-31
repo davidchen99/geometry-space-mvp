@@ -1,13 +1,13 @@
 # 几何空间 MVP
 
-一个面向初中、高中学生的数学题文字转图形理解工具。当前版本不依赖登录和 API Key，使用本地规则解析常见题型，并用 Three.js 生成可交互模型。
+一个面向初中、高中学生的数学题文字转图形理解工具。普通用户打开即可使用；管理员可以登录后台配置 DeepSeek API、查看使用数据、修改密码和控制每日调用上限。
 
 ## 快速运行
 
-推荐用本地静态服务器打开，避免浏览器拦截 ES Module：
+当前版本包含一个无依赖 Node 后端，负责静态页面、管理员后台、统计和 DeepSeek 代理。
 
 ```powershell
-python -m http.server 5173
+npm start
 ```
 
 然后访问：
@@ -16,6 +16,15 @@ python -m http.server 5173
 http://localhost:5173/
 ```
 
+管理员入口在页面左上角，初始账号：
+
+```text
+账号：admin
+密码：123456
+```
+
+部署到公网后请先在后台修改密码。
+
 ## 当前支持
 
 - 正方体：边长、顶点标注、中点、连接线
@@ -23,14 +32,24 @@ http://localhost:5173/
 - 三棱锥：线面垂直、底面直角关系、侧棱
 - 四棱锥：正方形底面、底面中心、高、对角线
 - 平面三角形：三边长度、中点、连接线
-- 交互：旋转、缩放、平移、点击高亮、重置视角、辅助线开关、测距、导出 PNG
+- 交互：流程条、手机端底部面板、旋转、缩放、平移、点击高亮、重置视角、辅助线开关、测距、导出 PNG
 
-## DeepSeek 接入预留
+## 输入 Tips
 
-当前默认是本地规则解析。后续接 DeepSeek 时，入口已预留在 `app.js`：
+前端题目输入区提供 `Tips` 按钮。点击后会先显示可直接使用的本地题目模板；如果管理员已经配置 DeepSeek 且未达到每日上限，后端会通过 `/api/tips` 生成更贴近当前输入的建议。
 
-- `window.GeometrySpaceAI.provider`
-- `buildDeepSeekPrompt(problemText)`
-- `requestDeepSeekParse(problemText, apiKey, endpoint)`
+Tips 的 API Key 仍然只保存在后端 `data/state.json`，不会暴露给前端。即使没有配置 Key，Tips 按钮也会返回本地模板，保证普通用户能快速开始。
 
-正式上线时不要把 DeepSeek API Key 直接写进前端页面，建议通过后端代理请求。
+## DeepSeek 使用方式
+
+普通用户不需要填写 API。管理员登录后台后填写：
+
+- DeepSeek API Key
+- API 地址
+- 模型名称
+- 提示词模板
+- 每日 AI 调用上限
+
+用户生成图形时会先走本地规则解析；本地解析失败时，后端再调用 DeepSeek，避免把 API Key 暴露给前端，也能降低成本。
+
+API Key 和统计数据保存在本地 `data/state.json`，该目录已加入 `.gitignore`。
