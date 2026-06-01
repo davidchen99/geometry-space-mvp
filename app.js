@@ -141,6 +141,14 @@ const dom = {
   appShell: document.querySelector("#appShell"),
   input: document.querySelector("#problemInput"),
   generateBtn: document.querySelector("#generateBtn"),
+  imageInputBtn: document.querySelector("#imageInputBtn"),
+  imageInputPanel: document.querySelector("#imageInputPanel"),
+  imageUploadBtn: document.querySelector("#imageUploadBtn"),
+  imageFileInput: document.querySelector("#imageFileInput"),
+  imagePreviewWrap: document.querySelector("#imagePreviewWrap"),
+  imagePreview: document.querySelector("#imagePreview"),
+  imageRemoveBtn: document.querySelector("#imageRemoveBtn"),
+  imageOcrStatus: document.querySelector("#imageOcrStatus"),
   completeBtn: document.querySelector("#completeBtn"),
   tipsBtn: document.querySelector("#tipsBtn"),
   samplesBtn: document.querySelector("#samplesBtn"),
@@ -297,6 +305,13 @@ const state = {
   pendingReviewContext: null,
   pendingAuthAction: null,
   pendingAuthMessage: "",
+  imageOcr: {
+    text: "",
+    quality: "",
+    confidence: 0,
+    reviewRequired: false,
+    edited: false,
+  },
   editingInviteId: "",
   adminInvites: [],
   pointerDown: null,
@@ -352,11 +367,20 @@ function initUI() {
   });
 
   dom.generateBtn.addEventListener("click", () => generateModel());
+  dom.imageInputBtn.addEventListener("click", toggleImageInputPanel);
+  dom.imageUploadBtn.addEventListener("click", () => dom.imageFileInput.click());
+  dom.imageRemoveBtn.addEventListener("click", () => clearProblemImage(true));
+  dom.imageFileInput.addEventListener("change", () => {
+    const file = dom.imageFileInput.files?.[0];
+    if (file) recognizeProblemImage(file);
+    dom.imageFileInput.value = "";
+  });
   dom.completeBtn.addEventListener("click", completeProblemText);
   dom.tipsBtn.addEventListener("click", showInputTips);
   dom.samplesBtn.addEventListener("click", toggleSamplesPanel);
   dom.clearBtn.addEventListener("click", () => {
     dom.input.value = "";
+    clearProblemImage(false);
     dom.input.focus();
     clearGeneratedModel();
     updateProblemHints("");
@@ -378,10 +402,12 @@ function initUI() {
   });
   dom.input.addEventListener("focus", () => setActiveStep("input"));
   dom.input.addEventListener("input", () => {
+    markImageOcrEdited();
     updateProblemHints(dom.input.value);
     syncChoiceQuestion();
     hideReviewPanel();
   });
+  dom.input.addEventListener("paste", handleImagePaste);
 
   dom.resetViewBtn.addEventListener("click", resetCameraToModel);
   dom.gridBtn.addEventListener("click", () => {
@@ -1369,10 +1395,275 @@ function renderHelpPanel() {
 function toggleSamplesPanel() {
   dom.samplesPanel.hidden = !dom.samplesPanel.hidden;
   dom.tipsPanel.hidden = true;
+  dom.imageInputPanel.hidden = true;
   hideReviewPanel();
   setActiveStep("input");
   setMobilePanel("input");
   setStatus(dom.samplesPanel.hidden ? "已收起示例" : "已打开示例");
+}
+
+function toggleImageInputPanel() {
+  dom.imageInputPanel.hidden = !dom.imageInputPanel.hidden;
+  if (!dom.imageInputPanel.hidden) {
+    dom.tipsPanel.hidden = true;
+    dom.samplesPanel.hidden = true;
+    setImageOcrStatus(state.imageOcr.text ? imageOcrStatusText() : "点击上传题目图片，或把截图复制后在输入框里粘贴。");
+  }
+  hideReviewPanel();
+  setActiveStep("input");
+  setMobilePanel("input");
+  setStatus(dom.imageInputPanel.hidden ? "已收起图片输入" : "已打开图片输入");
+  window.lucide?.createIcons();
+}
+
+function handleImagePaste(event) {
+  const items = Array.from(event.clipboardData?.items || []);
+  const imageItem = items.find((item) => item.type.startsWith("image/"));
+  if (!imageItem) return;
+  const file = imageItem.getAsFile();
+  if (!file) return;
+  event.preventDefault();
+  dom.imageInputPanel.hidden = false;
+  recognizeProblemImage(file);
+}
+
+async function recognizeProblemImage(file) {
+  if (!file.type.startsWith("image/")) {
+    setImageOcrStatus("请上传图片文件。");
+    return;
+  }
+
+  dom.imageInputPanel.hidden = false;
+  dom.samplesPanel.hidden = true;
+  dom.tipsPanel.hidden = true;
+  resetImageOcrState();
+  setImageOcrStatus("正在读取图片...");
+  showImagePreview(file);
+
+  try {
+    const Tesseract = await loadTesseract();
+    const ocrImage = await prepareImageForOcr(file);
+    setImageOcrStatus("正在识别文字，已先做图片增强...");
+    const result = await Tesseract.recognize(ocrImage, "chi_sim+eng", {
+      logger: (message) => {
+        if (message.status === "recognizing text" && Number.isFinite(message.progress)) {
+          setImageOcrStatus(`正在识别文字 ${Math.round(message.progress * 100)}%`);
+        }
+      },
+      tessedit_pageseg_mode: "6",
+    });
+    const text = cleanOcrText(result?.data?.text || "");
+    const quality = assessOcrQuality(text, result);
+    state.imageOcr.text = text;
+    state.imageOcr.quality = quality.level;
+    state.imageOcr.confidence = quality.confidence;
+    state.imageOcr.reviewRequired = quality.reviewRequired;
+    state.imageOcr.edited = false;
+
+    if (!text) throw new Error("没有识别到可用文字，请换一张更清晰的图片。");
+    if (quality.level === "bad") {
+      setImageOcrStatus(quality.message);
+      updateProblemHints(dom.input.value, "这张图片识别质量太低，已拦截自动填入，避免生成乱码模型。");
+      setStatus("图片识别质量低，未填入输入框");
+      return;
+    }
+
+    dom.input.value = text;
+    updateProblemHints(dom.input.value);
+    syncChoiceQuestion();
+    setImageOcrStatus(quality.message);
+    setStatus("图片文字已识别");
+  } catch (error) {
+    setImageOcrStatus(error.message || "图片识别失败");
+    setStatus("图片识别失败，可手动输入题目");
+  }
+}
+
+function setImageOcrStatus(text) {
+  dom.imageOcrStatus.textContent = text;
+}
+
+function imageOcrStatusText() {
+  if (!state.imageOcr.text) return "点击上传题目图片，或把截图复制后在输入框里粘贴。";
+  if (state.imageOcr.quality === "bad") return "图片识别质量低，未自动填入；可删除后重新上传更清晰图片。";
+  if (state.imageOcr.reviewRequired && !state.imageOcr.edited) return "识别文字已填入，但需要先检查修改，避免错字生成乱码模型。";
+  return "识别文字已填入输入框，可继续编辑后生成。";
+}
+
+function showImagePreview(file) {
+  const url = URL.createObjectURL(file);
+  dom.imagePreview.src = url;
+  dom.imagePreviewWrap.hidden = false;
+  dom.imagePreview.onload = () => URL.revokeObjectURL(url);
+  window.lucide?.createIcons();
+}
+
+function loadTesseract() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (window.__tesseractLoading) return window.__tesseractLoading;
+  window.__tesseractLoading = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    script.async = true;
+    script.onload = () => (window.Tesseract ? resolve(window.Tesseract) : reject(new Error("OCR 组件加载失败")));
+    script.onerror = () => reject(new Error("OCR 组件加载失败，请检查网络后重试。"));
+    document.head.appendChild(script);
+  });
+  return window.__tesseractLoading;
+}
+
+function cleanOcrText(text) {
+  return String(text || "")
+    .normalize("NFKC")
+    .replace(/\r/g, "")
+    .replace(/[﹣－–—]/g, "-")
+    .replace(/[＝]/g, "=")
+    .replace(/[，,]\s*/g, "，")
+    .replace(/[；;]/g, "；")
+    .replace(/[：]/g, ":")
+    .replace(/[（]/g, "(")
+    .replace(/[）]/g, ")")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("，")
+    .replace(/\s*([=+\-*/×÷√⊥∥,，。；:：()])\s*/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/，{2,}/g, "，")
+    .replace(/([。！？])，/g, "$1")
+    .trim();
+}
+
+async function prepareImageForOcr(file) {
+  try {
+    const bitmap = await loadBitmap(file);
+    const longest = Math.max(bitmap.width, bitmap.height);
+    const scale = longest < 1200 ? Math.min(2.4, 1600 / Math.max(longest, 1)) : Math.min(1, 2200 / longest);
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(bitmap, 0, 0, width, height);
+    const imageData = context.getImageData(0, 0, width, height);
+    enhanceOcrImageData(imageData);
+    context.putImageData(imageData, 0, 0);
+    return await new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob || file), "image/png");
+    });
+  } catch {
+    return file;
+  }
+}
+
+function loadBitmap(file) {
+  if (window.createImageBitmap) return createImageBitmap(file);
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("图片读取失败"));
+    };
+    image.src = url;
+  });
+}
+
+function enhanceOcrImageData(imageData) {
+  const data = imageData.data;
+  for (let index = 0; index < data.length; index += 4) {
+    let gray = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+    gray = Math.max(0, Math.min(255, (gray - 128) * 1.45 + 128));
+    if (gray > 238) gray = 255;
+    if (gray < 38) gray = 0;
+    data[index] = gray;
+    data[index + 1] = gray;
+    data[index + 2] = gray;
+    data[index + 3] = 255;
+  }
+}
+
+function assessOcrQuality(text, result) {
+  const confidenceValue = Number(result?.data?.confidence);
+  const confidence = Number.isFinite(confidenceValue) ? Math.round(confidenceValue) : 72;
+  const clean = normalizeText(text || "");
+  const geometryTerms = (clean.match(/正方体|长方体|三棱锥|三角锥|四面体|棱锥|棱柱|圆柱|圆锥|圆台|球|椭球|双曲面|抛物面|三角形|平面|底面|高|半径|母线|体积|面积/g) || []).length;
+  const labels = clean.match(/[A-Z][0-9]?/g) || [];
+  const equations = clean.match(/[=＝](?:\d|√|-|\()/g) || [];
+  const unreadable = (text.match(/[�□■◆◇●]/g) || []).length;
+  const enoughGeometrySignal = geometryTerms > 0 || labels.length >= 3 || equations.length >= 2;
+  const tooShort = clean.length < 8;
+  const bad = tooShort || unreadable > 0 || confidence < 45 || !enoughGeometrySignal;
+  const reviewRequired = !bad && (confidence < 68 || geometryTerms === 0 || labels.length < 2);
+
+  if (bad) {
+    return {
+      level: "bad",
+      confidence,
+      reviewRequired: true,
+      message: `识别可信度 ${confidence}%，质量偏低，已拦截自动填入；请删除后重新上传更清晰图片，或手动输入题目。`,
+    };
+  }
+  if (reviewRequired) {
+    return {
+      level: "review",
+      confidence,
+      reviewRequired: true,
+      message: `识别可信度 ${confidence}%，已填入输入框；请先检查并修改错字，再点击生成。`,
+    };
+  }
+  return {
+    level: "good",
+    confidence,
+    reviewRequired: false,
+    message: `识别可信度 ${confidence}%，已填入输入框，可检查后生成。`,
+  };
+}
+
+function resetImageOcrState() {
+  state.imageOcr = {
+    text: "",
+    quality: "",
+    confidence: 0,
+    reviewRequired: false,
+    edited: false,
+  };
+}
+
+function markImageOcrEdited() {
+  if (!state.imageOcr.text) return;
+  state.imageOcr.edited = dom.input.value.trim() !== state.imageOcr.text;
+}
+
+function shouldBlockOcrGeneratedText(text) {
+  if (!state.imageOcr.text) return false;
+  const sameAsOcr = String(text || "").trim() === state.imageOcr.text;
+  if (!sameAsOcr) return false;
+  return state.imageOcr.quality === "bad" || (state.imageOcr.reviewRequired && !state.imageOcr.edited);
+}
+
+function clearProblemImage(updateStatus = true) {
+  const shouldClearInput = state.imageOcr.text && dom.input.value.trim() === state.imageOcr.text;
+  if (shouldClearInput) {
+    dom.input.value = "";
+    updateProblemHints("");
+    syncChoiceQuestion();
+  }
+  resetImageOcrState();
+  dom.imagePreview.removeAttribute("src");
+  dom.imagePreviewWrap.hidden = true;
+  dom.imageFileInput.value = "";
+  setImageOcrStatus("已删除图片，可重新上传或直接输入文字。");
+  if (updateStatus) setStatus("已删除题目图片");
 }
 
 function getHistory() {
@@ -1548,6 +1839,7 @@ async function showInputTips() {
   const text = dom.input.value.trim();
   dom.tipsPanel.hidden = false;
   dom.samplesPanel.hidden = true;
+  dom.imageInputPanel.hidden = true;
   setActiveStep("input");
   setMobilePanel("input");
   renderTips(buildLocalTips(text), "常用表达");
@@ -1572,6 +1864,7 @@ async function completeProblemText() {
   const result = organizeProblemText(text);
   dom.tipsPanel.hidden = true;
   dom.samplesPanel.hidden = true;
+  dom.imageInputPanel.hidden = true;
   setActiveStep("input");
   setMobilePanel("input");
   hideReviewPanel();
@@ -1785,6 +2078,15 @@ async function generateModel(options = {}) {
   if (!historyText) {
     setStatus("请先输入题目");
     updateProblemHints(historyText, "请先输入一道题，或者点 Tips 选一个模板。");
+    return;
+  }
+
+  if (shouldBlockOcrGeneratedText(historyText)) {
+    dom.imageInputPanel.hidden = false;
+    updateProblemHints(historyText, "图片识别文字还没有检查修改，已暂停生成，避免错字或乱码生成错误模型。");
+    setImageOcrStatus(imageOcrStatusText());
+    setStatus("请先检查图片识别文字");
+    dom.input.focus();
     return;
   }
 
@@ -2635,6 +2937,7 @@ function isCompositeGeometryText(text) {
 
 function createCompositeGeometryModel(text) {
   const model = /正方体/.test(text) ? createCubeModel(text) : createCuboidModel(text);
+  styleCompositeBaseShape(model);
   const bounds = computeBounds(model);
   model.type = "composite";
   model.title = "组合几何模型";
@@ -2652,6 +2955,21 @@ function createCompositeGeometryModel(text) {
     addRelation(model, "相交或截面部分已用加粗曲线标出，半透明面表示对应圆面或曲面。");
   }
   return model;
+}
+
+function styleCompositeBaseShape(model) {
+  (model.faces || []).forEach((face) => {
+    face.color = 0x8fc6df;
+    face.opacity = 0.12;
+    face.depthWrite = false;
+    face.renderOrder = 0;
+  });
+  (model.segments || []).forEach((segment) => {
+    segment.color = 0x2266d1;
+    segment.opacity = 0.92;
+    segment.radius = segment.radius || 0.017;
+  });
+  addRelation(model, "长方体/正方体主体已降低透明度，便于观察内部或相交形体。");
 }
 
 function addCompositePolyhedra(model, text, bounds) {
@@ -2678,18 +2996,30 @@ function addCompositeTriPyramid(model, text, bounds) {
     [c]: { x: 0, y: width * 0.55, z: baseZ },
     [apex]: { x: 0, y: 0, z: apexZ },
   };
+  const faceStyle = { color: 0x8b5cf6, opacity: 0.48, depthWrite: false, renderOrder: 2, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 };
+  const edgeStyle = { color: 0x4c1d95, opacity: 1, radius: 0.032 };
+  const highlightStyle = {
+    color: 0xff2f7d,
+    opacity: 0.78,
+    depthWrite: false,
+    depthTest: false,
+    renderOrder: 8,
+    polygonOffset: true,
+    polygonOffsetFactor: -4,
+    polygonOffsetUnits: -4,
+  };
 
   Object.entries(points).forEach(([label, point]) => addPoint(model, label, point.x, point.y, point.z, label === apex ? "组合三棱锥顶点" : "组合三棱锥底面顶点"));
-  [[a, b], [b, c], [c, a], [apex, a], [apex, b], [apex, c]].forEach(([from, to]) => addSegment(model, from, to, "edge", "组合三棱锥棱"));
-  addFace(model, `组合平面${a}${b}${c}`, [a, b, c]);
-  addFace(model, `组合平面${apex}${a}${b}`, [apex, a, b]);
-  addFace(model, `组合平面${apex}${b}${c}`, [apex, b, c]);
-  addFace(model, `组合平面${apex}${c}${a}`, [apex, c, a]);
+  [[a, b], [b, c], [c, a], [apex, a], [apex, b], [apex, c]].forEach(([from, to]) => addSegment(model, from, to, "edge", "组合三棱锥棱", edgeStyle));
+  addFace(model, `组合平面${a}${b}${c}`, [a, b, c], faceStyle);
+  addFace(model, `组合平面${apex}${a}${b}`, [apex, a, b], faceStyle);
+  addFace(model, `组合平面${apex}${b}${c}`, [apex, b, c], faceStyle);
+  addFace(model, `组合平面${apex}${c}${a}`, [apex, c, a], faceStyle);
   addSurface(model, "长方体与三棱锥相交高亮区", {
     vertices: [points[a], points[b], points[c]].map((point) => ({ ...point, z: point.z + 0.012 })),
     indices: [0, 1, 2],
-  }, "用高亮三角形表示两个多面体的相交截面", { color: 0xff4f7b, opacity: 0.58 });
-  addCurve(model, "三棱锥相交边界", [points[a], points[b], points[c], points[a]].map((point) => ({ ...point, z: point.z + 0.018 })), "相交区域边界");
+  }, "用高亮三角形表示两个多面体的相交截面", highlightStyle);
+  addCurve(model, "三棱锥相交边界", [points[a], points[b], points[c], points[a]].map((point) => ({ ...point, z: point.z + 0.018 })), "相交区域边界", { color: 0xff005d, radius: 0.038, opacity: 1 });
   addRelation(model, `组合三棱锥 ${displayLabelText(apex)}-${displayLabelText(a)}${displayLabelText(b)}${displayLabelText(c)} 已完整显示点、棱和面。`);
   addRelation(model, "粉色高亮面表示长方体与三棱锥的相交参考区域。");
 }
@@ -2709,19 +3039,31 @@ function addCompositeSquarePyramid(model, text, bounds) {
     [d]: { x: -half, y: half, z: baseZ },
     [apex]: { x: 0, y: 0, z: apexZ },
   };
+  const faceStyle = { color: 0x8b5cf6, opacity: 0.48, depthWrite: false, renderOrder: 2, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 };
+  const edgeStyle = { color: 0x4c1d95, opacity: 1, radius: 0.032 };
+  const highlightStyle = {
+    color: 0xff2f7d,
+    opacity: 0.78,
+    depthWrite: false,
+    depthTest: false,
+    renderOrder: 8,
+    polygonOffset: true,
+    polygonOffsetFactor: -4,
+    polygonOffsetUnits: -4,
+  };
 
   Object.entries(points).forEach(([label, point]) => addPoint(model, label, point.x, point.y, point.z, label === apex ? "组合四棱锥顶点" : "组合四棱锥底面顶点"));
-  [[a, b], [b, c], [c, d], [d, a], [apex, a], [apex, b], [apex, c], [apex, d]].forEach(([from, to]) => addSegment(model, from, to, "edge", "组合四棱锥棱"));
-  addFace(model, `组合平面${a}${b}${c}${d}`, [a, b, c, d]);
-  addFace(model, `组合平面${apex}${a}${b}`, [apex, a, b]);
-  addFace(model, `组合平面${apex}${b}${c}`, [apex, b, c]);
-  addFace(model, `组合平面${apex}${c}${d}`, [apex, c, d]);
-  addFace(model, `组合平面${apex}${d}${a}`, [apex, d, a]);
+  [[a, b], [b, c], [c, d], [d, a], [apex, a], [apex, b], [apex, c], [apex, d]].forEach(([from, to]) => addSegment(model, from, to, "edge", "组合四棱锥棱", edgeStyle));
+  addFace(model, `组合平面${a}${b}${c}${d}`, [a, b, c, d], faceStyle);
+  addFace(model, `组合平面${apex}${a}${b}`, [apex, a, b], faceStyle);
+  addFace(model, `组合平面${apex}${b}${c}`, [apex, b, c], faceStyle);
+  addFace(model, `组合平面${apex}${c}${d}`, [apex, c, d], faceStyle);
+  addFace(model, `组合平面${apex}${d}${a}`, [apex, d, a], faceStyle);
   addSurface(model, "长方体与四棱锥相交高亮区", {
     vertices: [points[a], points[b], points[c], points[d]].map((point) => ({ ...point, z: point.z + 0.012 })),
     indices: [0, 1, 2, 0, 2, 3],
-  }, "用高亮四边形表示两个多面体的相交截面", { color: 0xff4f7b, opacity: 0.58 });
-  addCurve(model, "四棱锥相交边界", [points[a], points[b], points[c], points[d], points[a]].map((point) => ({ ...point, z: point.z + 0.018 })), "相交区域边界");
+  }, "用高亮四边形表示两个多面体的相交截面", highlightStyle);
+  addCurve(model, "四棱锥相交边界", [points[a], points[b], points[c], points[d], points[a]].map((point) => ({ ...point, z: point.z + 0.018 })), "相交区域边界", { color: 0xff005d, radius: 0.038, opacity: 1 });
   addRelation(model, `组合四棱锥 ${displayLabelText(apex)}-${displayLabelText(a)}${displayLabelText(b)}${displayLabelText(c)}${displayLabelText(d)} 已完整显示点、棱和面。`);
   addRelation(model, "粉色高亮面表示长方体与四棱锥的相交参考区域。");
 }
@@ -2747,11 +3089,13 @@ function addCompositeCylinder(model, text, bounds) {
   const top = { x: 0, y: 0, z: bounds.max.z };
   const bottomLabel = uniquePointLabel(model, "O");
   const topLabel = uniquePointLabel(model, "O1");
+  const solidStyle = { color: 0x14b8a6, opacity: 0.34, depthWrite: false, renderOrder: 1 };
+  const intersectionCurveStyle = { color: 0xf97316, opacity: 1, radius: 0.032 };
   addPoint(model, bottomLabel, bottom.x, bottom.y, bottom.z, "圆柱下底圆心");
   addPoint(model, topLabel, top.x, top.y, top.z, "圆柱上底圆心");
   addSegment(model, bottomLabel, topLabel, "aux", "圆柱轴线");
-  addCurve(model, "圆柱与下底面交线", circleCurveAt(radius, bottom), `半径 ${radiusText}`);
-  addCurve(model, "圆柱与上底面交线", circleCurveAt(radius, top), `半径 ${radiusText}`);
+  addCurve(model, "圆柱与下底面交线", circleCurveAt(radius, bottom), `半径 ${radiusText}`, intersectionCurveStyle);
+  addCurve(model, "圆柱与上底面交线", circleCurveAt(radius, top), `半径 ${radiusText}`, intersectionCurveStyle);
   addSurface(model, "组合圆柱侧面", makeParametricSurface(48, 12, (u, v) => {
     const angle = u * Math.PI * 2;
     return {
@@ -2759,7 +3103,7 @@ function addCompositeCylinder(model, text, bounds) {
       y: radius * Math.sin(angle),
       z: bottom.z + (top.z - bottom.z) * v,
     };
-  }, true), `与长方体相交，半径 ${radiusText}`);
+  }, true), `与长方体相交，半径 ${radiusText}`, solidStyle);
   addRelation(model, `圆柱半径 = ${radiusText}`);
 }
 
@@ -2769,6 +3113,7 @@ function addCompositeSphere(model, text, bounds) {
   const radiusText = formatDimension(radiusInfo);
   const center = { x: 0, y: 0, z: (bounds.min.z + bounds.max.z) / 2 };
   const label = uniquePointLabel(model, "S");
+  const solidStyle = { color: 0xf59e0b, opacity: 0.32, depthWrite: false, renderOrder: 1 };
   addPoint(model, label, center.x, center.y, center.z, "球心");
   addSurface(model, "组合球面", makeParametricSurface(48, 20, (u, v) => {
     const theta = u * Math.PI * 2;
@@ -2778,8 +3123,8 @@ function addCompositeSphere(model, text, bounds) {
       y: center.y + radius * Math.sin(phi) * Math.sin(theta),
       z: center.z + radius * Math.cos(phi),
     };
-  }, true), `半径 ${radiusText}`);
-  addCurve(model, "球与中截面交线", circleCurveAt(radius, center), `z=${formatNumber(center.z)} 截面`);
+  }, true), `半径 ${radiusText}`, solidStyle);
+  addCurve(model, "球与中截面交线", circleCurveAt(radius, center), `z=${formatNumber(center.z)} 截面`, { color: 0xf97316, opacity: 1, radius: 0.032 });
   addRelation(model, `球半径 = ${radiusText}`);
 }
 
@@ -2811,8 +3156,8 @@ function addCompositeCircles(model, text, bounds, alreadyHasRoundSolid) {
     const offset = array.length === 1 ? 0 : -span / 2 + (span * index) / (array.length - 1);
     const center = { x: offset, y: 0, z };
     addPoint(model, label, center.x, center.y, center.z, "圆心");
-    addCurve(model, `圆${displayLabelText(label)}截面交线`, circleCurveAt(radius, center), `半径 ${radiusText}`);
-    addSurface(model, `圆${displayLabelText(label)}截面圆面`, makeDiskSurfaceAt(radius, center), `半径 ${radiusText}`);
+    addCurve(model, `圆${displayLabelText(label)}截面交线`, circleCurveAt(radius, center), `半径 ${radiusText}`, { color: 0xf97316, opacity: 1, radius: 0.03 });
+    addSurface(model, `圆${displayLabelText(label)}截面圆面`, makeDiskSurfaceAt(radius, center), `半径 ${radiusText}`, { color: 0xf97316, opacity: 0.42, depthWrite: false, depthTest: false, renderOrder: 7 });
   });
 }
 
@@ -3152,12 +3497,15 @@ function makeDiskSurfaceAt(radius, center = { x: 0, y: 0, z: 0 }, axis = "z", re
   return surface;
 }
 
-function addCurve(model, label, points, note = "") {
+function addCurve(model, label, points, note = "", options = {}) {
   model.curves.push({
     id: `curve:${label}`,
     label,
     points,
     note,
+    color: options.color,
+    opacity: options.opacity,
+    radius: options.radius,
   });
 }
 
@@ -3171,6 +3519,12 @@ function addSurface(model, label, surfaceData, note = "", options = {}) {
     note,
     color: options.color,
     opacity: options.opacity,
+    depthWrite: options.depthWrite,
+    depthTest: options.depthTest,
+    polygonOffset: options.polygonOffset,
+    polygonOffsetFactor: options.polygonOffsetFactor,
+    polygonOffsetUnits: options.polygonOffsetUnits,
+    renderOrder: options.renderOrder,
   });
 }
 
@@ -3513,13 +3867,16 @@ function setPointDisplayPosition(model, label, displayPosition) {
   model.points[label].displayPosition = displayPosition;
 }
 
-function addSegment(model, from, to, kind = "edge", note = "") {
+function addSegment(model, from, to, kind = "edge", note = "", options = {}) {
   if (!model.points[from] || !model.points[to] || from === to) return;
   const key = segmentKey(from, to);
   const existing = model.segments.find((segment) => segment.key === key);
   if (existing) {
     if (existing.kind === "aux" && kind !== "aux") existing.kind = kind;
     if (note && !existing.note.includes(note)) existing.note = [existing.note, note].filter(Boolean).join("，");
+    if (options.color) existing.color = options.color;
+    if (options.opacity !== undefined) existing.opacity = options.opacity;
+    if (options.radius) existing.radius = options.radius;
     return;
   }
   model.segments.push({
@@ -3530,15 +3887,26 @@ function addSegment(model, from, to, kind = "edge", note = "") {
     label: `${from}${to}`,
     kind,
     note,
+    color: options.color,
+    opacity: options.opacity,
+    radius: options.radius,
   });
 }
 
-function addFace(model, label, vertices) {
+function addFace(model, label, vertices, options = {}) {
   if (vertices.some((vertex) => !model.points[vertex])) return;
   model.faces.push({
     id: `face:${label}`,
     label,
     vertices,
+    color: options.color,
+    opacity: options.opacity,
+    depthWrite: options.depthWrite,
+    depthTest: options.depthTest,
+    polygonOffset: options.polygonOffset,
+    polygonOffsetFactor: options.polygonOffsetFactor,
+    polygonOffsetUnits: options.polygonOffsetUnits,
+    renderOrder: options.renderOrder,
   });
 }
 
@@ -3817,14 +4185,20 @@ function renderFace(model, face, index) {
   geometry.computeVertexNormals();
 
   const material = new THREE.MeshStandardMaterial({
-    color: colors.face[index % colors.face.length],
+    color: face.color || colors.face[index % colors.face.length],
     transparent: true,
-    opacity: 0.22,
+    opacity: face.opacity ?? 0.22,
     side: THREE.DoubleSide,
     roughness: 0.72,
     metalness: 0,
+    depthWrite: face.depthWrite ?? false,
+    depthTest: face.depthTest ?? true,
+    polygonOffset: face.polygonOffset ?? false,
+    polygonOffsetFactor: face.polygonOffsetFactor ?? 0,
+    polygonOffsetUnits: face.polygonOffsetUnits ?? 0,
   });
   const mesh = new THREE.Mesh(geometry, material);
+  mesh.renderOrder = face.renderOrder ?? 0;
   const center = positions.reduce((sum, point) => sum.add(toVector3(point)), new THREE.Vector3()).multiplyScalar(1 / positions.length);
   mesh.userData = {
     elementId: face.id,
@@ -3857,8 +4231,14 @@ function renderSurface(model, surface, index) {
     side: THREE.DoubleSide,
     roughness: 0.68,
     metalness: 0,
+    depthWrite: surface.depthWrite ?? false,
+    depthTest: surface.depthTest ?? true,
+    polygonOffset: surface.polygonOffset ?? false,
+    polygonOffsetFactor: surface.polygonOffsetFactor ?? 0,
+    polygonOffsetUnits: surface.polygonOffsetUnits ?? 0,
   });
   const mesh = new THREE.Mesh(geometry, material);
+  mesh.renderOrder = surface.renderOrder ?? 0;
   const center = (surface.vertices || []).reduce((sum, point) => sum.add(toVector3(point)), new THREE.Vector3()).multiplyScalar(1 / surface.vertices.length);
   const area = computeSurfaceArea(surface);
   mesh.userData = {
@@ -3882,11 +4262,11 @@ function renderSegment(model, segment) {
   const end = toVector3(to);
   const length = start.distanceTo(end);
   const slope = segmentSlopeText(start, end);
-  const radius = segment.kind === "aux" ? 0.012 : 0.018;
+  const radius = segment.radius || (segment.kind === "aux" ? 0.012 : 0.018);
   const material = new THREE.MeshStandardMaterial({
-    color: segment.kind === "connection" ? colors.connection : segment.kind === "aux" ? colors.aux : colors.line,
-    transparent: segment.kind === "aux",
-    opacity: segment.kind === "aux" ? 0.56 : 1,
+    color: segment.color || (segment.kind === "connection" ? colors.connection : segment.kind === "aux" ? colors.aux : colors.line),
+    transparent: segment.kind === "aux" || segment.opacity !== undefined,
+    opacity: segment.opacity ?? (segment.kind === "aux" ? 0.56 : 1),
     roughness: 0.45,
   });
   const geometry = new THREE.CylinderGeometry(radius, radius, length, 14);
@@ -3917,14 +4297,15 @@ function renderCurve(model, curve, index) {
   const vectors = (curve.points || []).map((point) => toVector3(point));
   if (vectors.length < 2) return;
   const path = new THREE.CatmullRomCurve3(vectors);
-  const geometry = new THREE.TubeGeometry(path, Math.max(vectors.length * 2, 36), 0.018, 10, false);
+  const radius = curve.radius || 0.018;
+  const curveGeometry = new THREE.TubeGeometry(path, Math.max(vectors.length * 2, 36), radius, 10, false);
   const material = new THREE.MeshStandardMaterial({
-    color: colors.face[index % colors.face.length],
+    color: curve.color || colors.face[index % colors.face.length],
     roughness: 0.42,
     transparent: true,
-    opacity: 0.95,
+    opacity: curve.opacity ?? 0.95,
   });
-  const mesh = new THREE.Mesh(geometry, material);
+  const mesh = new THREE.Mesh(curveGeometry, material);
   const center = vectors[Math.floor(vectors.length / 2)].clone();
   mesh.userData = {
     elementId: curve.id,

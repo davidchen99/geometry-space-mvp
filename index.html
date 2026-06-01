@@ -86,8 +86,27 @@
               spellcheck="false"
               placeholder="例如：已知圆台O₁O，上底半径r=1，下底半径R=3，高O₁O=2√3，母线AB=4，求侧面积和体积"
             ></textarea>
+            <input id="imageFileInput" type="file" accept="image/*" hidden />
+
+            <section class="image-input-panel" id="imageInputPanel" hidden>
+              <button class="image-drop" id="imageUploadBtn" type="button">
+                <i data-lucide="image-up"></i>
+                <span>上传题目图片，或直接粘贴截图</span>
+              </button>
+              <div class="image-preview-wrap" id="imagePreviewWrap" hidden>
+                <img id="imagePreview" alt="题目图片预览" />
+                <button class="icon-button image-remove" id="imageRemoveBtn" type="button" aria-label="删除图片" title="删除图片">
+                  <i data-lucide="trash-2"></i>
+                </button>
+              </div>
+              <div class="image-ocr-status" id="imageOcrStatus">识别出的文字会自动填入输入框</div>
+            </section>
 
             <div class="primary-actions">
+              <button class="secondary-button" id="imageInputBtn" type="button" aria-label="输入图片" title="输入图片">
+                <i data-lucide="image-up"></i>
+                输入图片
+              </button>
               <button class="secondary-button" id="completeBtn" type="button" aria-label="帮我完善题目信息" title="帮我完善题目信息">
                 <i data-lucide="sparkles"></i>
                 帮我完善

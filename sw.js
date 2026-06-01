@@ -1,4 +1,4 @@
-const CACHE_NAME = "geometry-space-v3";
+const CACHE_NAME = "geometry-space-v5";
 const CORE_ASSETS = [
   "./",
   "./index.html",

@@ -325,9 +325,67 @@ button {
 
 .primary-actions {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 9px;
   margin-top: 12px;
+}
+
+.image-input-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px dashed rgba(15, 143, 140, 0.45);
+  border-radius: 8px;
+  background: #f4fbfa;
+}
+
+.image-drop {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(15, 143, 140, 0.25);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  font-weight: 850;
+}
+
+.image-drop svg {
+  width: 18px;
+  height: 18px;
+}
+
+.image-preview-wrap {
+  position: relative;
+  display: grid;
+}
+
+#imagePreview {
+  max-height: 180px;
+  width: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+}
+
+.image-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(197, 67, 67, 0.28);
+  color: #b42318;
+  box-shadow: var(--shadow-soft);
+}
+
+.image-ocr-status {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .primary-button,
@@ -1816,7 +1874,7 @@ button {
   }
 
   .primary-actions {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   #selectAllBtn {
