@@ -13,9 +13,24 @@ const samples = [
     text: "三棱锥P-ABC，PA垂直于平面ABC，AB垂直于BC，PA=AB=BC=1，连接PB、PC。",
   },
   {
-    title: "长方体",
-    meta: "比例尺寸",
-    text: "长方体ABCD-A1B1C1D1，AB=3，BC=2，AA1=2，M是CC1的中点，连接AM。",
+    title: "圆台",
+    meta: "根号 + 侧面积体积",
+    text: "已知圆台O₁O，上底面圆心为O₁，半径r=1，下底面圆心为O，半径R=3。圆台的高O₁O=2√3，母线AB=4，其中A为上底面圆周上一点，B为下底面圆周上一点，且O₁A⊥O₁O，OB⊥O₁O，O₁A∥OB。求该圆台的侧面积和体积。",
+  },
+  {
+    title: "圆柱",
+    meta: "半径 + 高",
+    text: "圆柱，底面圆心O，上底圆心O₁，半径=2，高O₁O=4，连接OO₁。",
+  },
+  {
+    title: "球",
+    meta: "半径 + 坐标",
+    text: "球O，半径=3，A(3,0,0)，B(0,3,0)，C(0,0,3)。",
+  },
+  {
+    title: "正四面体",
+    meta: "棱长 + 点位",
+    text: "正四面体ABCD，棱长=2。",
   },
   {
     title: "四棱锥",
@@ -46,6 +61,41 @@ const starterTips = [
     text: "三棱锥P-ABC，PA垂直于平面ABC，AB垂直于BC，PA=AB=BC=1，连接PB、PC。",
   },
   {
+    title: "圆台侧面积体积",
+    meta: "正常考试题写法 + 根号",
+    text: "已知圆台O₁O，上底面圆心为O₁，半径r=1，下底面圆心为O，半径R=3。圆台的高O₁O=2√3，母线AB=4，其中A为上底面圆周上一点，B为下底面圆周上一点，且O₁A⊥O₁O，OB⊥O₁O，O₁A∥OB。求该圆台的侧面积和体积。",
+  },
+  {
+    title: "圆柱半径高度",
+    meta: "圆心 + 半径 + 高",
+    text: "圆柱，底面圆心O，上底圆心O₁，半径=2，高O₁O=4，连接OO₁。",
+  },
+  {
+    title: "圆锥底面和高",
+    meta: "底面半径 + 顶点高度",
+    text: "圆锥P-O，底面半径=2，高=3，连接PO。",
+  },
+  {
+    title: "椭球面三半轴",
+    meta: "二次曲面 + 半轴",
+    text: "椭球面，a=3，b=2，c=1.5。",
+  },
+  {
+    title: "直三棱柱",
+    meta: "底面边长 + 高",
+    text: "直三棱柱ABC-A₁B₁C₁，底面边长=2，高AA₁=3。",
+  },
+  {
+    title: "长方体截面圆",
+    meta: "组合图形 + 交线",
+    text: "长方体ABCD-A₁B₁C₁D₁，AB=6，BC=4，AA₁=4。一个圆柱垂直穿过长方体，圆柱轴线经过上下底面中心，半径=1.5，显示圆柱与长方体上下底面的交线。",
+  },
+  {
+    title: "显式坐标点",
+    meta: "按坐标准确放置",
+    text: "A(1,2,3)，B(4,2,3)，C(1,5,3)，连接AB、BC、CA。",
+  },
+  {
     title: "四棱锥底面中心",
     meta: "底面 + 中心 + 高",
     text: "四棱锥P-ABCD，底面ABCD是正方形，AB=2，O是AC和BD的交点，PO垂直于平面ABCD，PO=2，连接PA、PB、PC、PD。",
@@ -58,7 +108,7 @@ const helpItems = [
   {
     title: "读题型",
     text: "先看题目是平面题还是空间题。",
-    detail: "三角形、圆、轨迹多用 2D；正方体、长方体、棱锥多用 3D。",
+    detail: "三角形、圆、轨迹多用 2D；正方体、长方体、棱柱、棱锥和曲面体多用 3D。",
   },
   {
     title: "找点线面",
@@ -83,7 +133,7 @@ const helpItems = [
   {
     title: "不会写题目",
     text: "点 Tips 选择规范表达。",
-    detail: "圆、轨迹、球、圆锥这类题优先尝试 2D 或 AI 解析。",
+    detail: "圆柱、圆锥、圆台、球、椭球面、棱柱、棱锥都可以先写类型、点名和尺寸。",
   },
 ];
 
@@ -260,6 +310,7 @@ const colors = {
   connection: 0x0f8f8c,
   aux: 0x8a9298,
   face: [0xffb84d, 0x6fc0a7, 0x7a9cf5, 0xe87962, 0xa6a15d, 0x58a8b0],
+  surface: [0x6fc0a7, 0x7a9cf5, 0xffb84d, 0xe87962, 0x8fc6df, 0xa6a15d],
   selected: 0xffb84d,
   measure: 0xf08b2f,
 };
@@ -499,7 +550,7 @@ function setViewMode(mode, reset = true) {
 
 function inferViewModeFromText(text) {
   const clean = normalizeText(text || "");
-  if (/(正方体|长方体|三棱锥|三角锥|四面体|四棱锥|棱锥|棱柱|圆锥|圆柱|球)/.test(clean)) return "3d";
+  if (/(正方体|长方体|三棱锥|三角锥|四面体|四棱锥|棱锥|棱柱|圆锥|圆柱|圆台|球|椭球面|椭球|双曲面|抛物面|柱面|二次曲面)/.test(clean)) return "3d";
   if (/(圆|椭圆|抛物线|双曲线|轨迹|动点|三角形|△)/.test(clean)) return "2d";
   return "3d";
 }
@@ -1212,20 +1263,20 @@ function analyzeProblemText(text) {
   const hints = [];
   if (!clean) return hints;
 
-  const hasSupportedType = /(正方体|长方体|三棱锥|三角锥|四面体|四棱锥|正四棱锥|棱锥|三角形|△)/.test(clean);
-  const hasCurveType = /(圆|椭圆|抛物线|双曲线|轨迹|动点)/.test(clean);
-  const hasRoundSolidType = /(球|圆锥|圆柱)/.test(clean);
+  const hasSupportedType = /(正方体|长方体|三棱锥|三角锥|四面体|正四面体|四棱锥|正四棱锥|棱锥|棱柱|圆柱|圆锥|圆台|球|椭球面|椭球|双曲面|抛物面|柱面|二次曲面|三角形|△)/.test(clean);
+  const hasCurveType = /(椭圆|抛物线|双曲线|轨迹|动点)/.test(clean) || (/圆/.test(clean) && !/(圆柱|圆锥|圆台)/.test(clean));
+  const hasSurfaceSolidType = /(球|圆锥|圆柱|圆台|椭球面|椭球|双曲面|抛物面|柱面|二次曲面)/.test(clean);
 
   if (hasCurveType) {
     hints.push({ level: "info", text: "检测到圆类或轨迹题，建议先用 2D 平面视图；本地规则不够时会尝试 AI 解析。" });
   }
 
-  if (hasRoundSolidType) {
-    hints.push({ level: "warn", text: "检测到球、圆锥或圆柱，这类空间曲面题本地规则暂不稳定，建议使用 AI 解析。" });
+  if (hasSurfaceSolidType) {
+    hints.push({ level: "info", text: "检测到空间曲面或旋转体，系统会按题目给出的半径、高、半轴或点坐标生成 3D 模型。" });
   }
 
-  if (!hasSupportedType && !hasCurveType && !hasRoundSolidType) {
-    hints.push({ level: "warn", text: "题目里最好先写清图形类型，例如正方体、长方体、三棱锥、三角锥或三角形。" });
+  if (!hasSupportedType && !hasCurveType) {
+    hints.push({ level: "warn", text: "题目里最好先写清图形类型，例如正方体、棱柱、棱锥、圆柱、圆锥、球或椭球面。" });
   }
 
   const labels = clean.match(/[A-Z][0-9]?/g) || [];
@@ -1233,11 +1284,11 @@ function analyzeProblemText(text) {
     hints.push({ level: "warn", text: "点名偏少，建议写出 A、B、C、P、A1 这类顶点标记。" });
   }
 
-  if (!/(边长|棱长|底边长|半径|直径|=|为)\d/.test(clean)) {
+  if (!/(边长|棱长|底边长|半径|直径|高|高度|a|b|c|=|为)\d/.test(clean)) {
     hints.push({
       level: "info",
-      text: hasCurveType
-        ? "没有看到半径、直径或动点范围；想更准确可以写 半径为2 或 P在圆O上运动。"
+      text: hasCurveType || hasSurfaceSolidType
+        ? "没有看到半径、直径、高或半轴；系统会用默认尺寸，想更准确可以写 半径=2、高=4 或 a=3,b=2,c=1。"
         : "没有看到长度，系统会用默认尺寸；想更准确可以写 AB=2 或边长为2。",
     });
   }
@@ -1415,7 +1466,7 @@ function buildLocalStudy(model = state.currentModel) {
   const steps = [
     `识别题型：${model.title}。`,
     "建立坐标系：底面尽量放在 z=0 平面，高度沿 z 轴向上。",
-    `标出关键元素：${Object.keys(model.points).length} 个点、${model.segments.length} 条线、${model.faces.length} 个面、${model.curves?.length || 0} 条曲线。`,
+    `标出关键元素：${Object.keys(model.points).length} 个点、${model.segments.length} 条线、${model.faces.length} 个面、${model.curves?.length || 0} 条曲线、${model.surfaces?.length || 0} 个曲面。`,
   ];
 
   if (relations.length) steps.push(`读出题目关系：${relations.join("；")}。`);
@@ -1477,6 +1528,7 @@ function summarizeCurrentModel() {
     segmentCount: model.segments?.length || 0,
     faceCount: model.faces?.length || 0,
     curveCount: model.curves?.length || 0,
+    surfaceCount: model.surfaces?.length || 0,
     relations: (model.relations || []).slice(0, 8),
     equations: (model.equations || buildModelEquations(model)).slice(0, 5),
   };
@@ -1528,7 +1580,7 @@ async function completeProblemText() {
 function organizeProblemText(rawText) {
   const raw = String(rawText || "").trim();
   const normalized = normalizeText(raw);
-  const shape = normalized.match(/正方体|长方体|正三棱锥|三棱锥|三角锥|四面体|正四棱锥|四棱锥|棱锥|三角形|△|圆|椭圆|双曲线|抛物线|直线|轨迹/)?.[0] || "";
+  const shape = normalized.match(/正方体|长方体|正四面体|正三棱锥|三棱锥|三角锥|四面体|正四棱锥|四棱锥|棱锥|棱柱|圆柱|圆锥|圆台|球|椭球面|椭球|双曲面|抛物面|二次柱面|柱面|三角形|△|圆|椭圆|双曲线|抛物线|直线|轨迹/)?.[0] || "";
   const labels = Array.from(new Set(normalized.match(/[A-Z][0-9]?/g) || []));
   const seenLengths = new Set();
   const lengthEntries = Array.from(parseLengthMap(normalized).entries())
@@ -1580,7 +1632,8 @@ function buildLocalTips(text) {
     return (
       normalizeText(tip.title).includes(normalized.slice(0, 3)) ||
       normalizeText(tip.text).includes(normalized.slice(0, 3)) ||
-      (/三角锥|三棱锥|四面体|棱锥/.test(normalized) && /三棱锥|四棱锥/.test(tip.text))
+      (/三角锥|三棱锥|四面体|棱锥/.test(normalized) && /三棱锥|四棱锥/.test(tip.text)) ||
+      (/圆柱|圆锥|圆台|球|椭球|柱面|棱柱/.test(normalized) && /圆柱|圆锥|椭球|棱柱|坐标/.test(tip.text))
     );
   });
   const pool = matched.length ? matched : starterTips;
@@ -1836,7 +1889,7 @@ function buildUnderstandingSummary(context) {
   const labels = Array.from(new Set(clean.match(/[A-Z][0-9]?/g) || [])).slice(0, 10);
   const lengths = Array.from(parseLengthMap(clean).entries()).slice(0, 6);
   const shape =
-    clean.match(/正方体|长方体|三棱锥|三角锥|四面体|四棱锥|正四棱锥|棱锥|三角形|圆|椭圆|双曲线|抛物线|直线|轨迹/)?.[0] || "待判断";
+    clean.match(/正方体|长方体|正四面体|三棱锥|三角锥|四面体|四棱锥|正四棱锥|棱锥|棱柱|圆柱|圆锥|圆台|球|椭球面|椭球|双曲面|抛物面|二次柱面|柱面|三角形|圆|椭圆|双曲线|抛物线|直线|轨迹/)?.[0] || "待判断";
   const relations = [];
   if (/垂直|⊥/.test(clean)) relations.push("垂直");
   if (/平行|\/\//.test(clean)) relations.push("平行");
@@ -1852,7 +1905,7 @@ function buildUnderstandingSummary(context) {
   ];
 
   if (lengths.length) {
-    items.push({ label: "长度：", value: lengths.map(([key, value]) => `${key}=${formatNumber(value)}`).join("、") });
+    items.push({ label: "长度：", value: lengths.map(([key, info]) => `${displayLabelText(key)}=${formatDimension(info)}`).join("、") });
   }
   if (choice) {
     items.push({ label: "选项：", value: choice.options.map((item) => item.key).join("、") });
@@ -1871,6 +1924,7 @@ function buildUnderstandingSummary(context) {
 
 function buildPreviewText(shape, relations, choice, context) {
   if (choice && !context.optionKey) return `简略图：题干 + ${choice.options.length} 个选项，点某个选项后会按该条件生成。`;
+  if (/圆柱|圆锥|圆台|球|椭球面|椭球|双曲面|抛物面|柱面|棱柱/.test(shape)) return `简略图：优先用 3D 坐标系展示 ${shape}，按题目尺寸和显式坐标标点。`;
   if (/圆|椭圆|双曲线|抛物线|轨迹|直线/.test(shape)) return `简略图：优先用 2D 坐标系展示 ${shape}，再标出点、交点或轨迹。`;
   return `简略图：先生成 ${shape} 的主体，再叠加 ${relations.length ? relations.join("、") : "题目给出的"} 关系。`;
 }
@@ -1879,10 +1933,34 @@ function buildModelFromText(rawText) {
   const text = normalizeText(rawText);
   let model;
 
-  if (/正方体/.test(text)) {
+  if (isCompositeGeometryText(text)) {
+    model = createCompositeGeometryModel(text);
+  } else if (/正方体/.test(text)) {
     model = createCubeModel(text);
   } else if (/长方体/.test(text)) {
     model = createCuboidModel(text);
+  } else if (/正四面体/.test(text)) {
+    model = createRegularTetrahedronModel(text);
+  } else if (/二次柱面|椭圆柱面|双曲柱面|抛物柱面/.test(text)) {
+    model = createQuadraticCylinderModel(text);
+  } else if (/圆柱/.test(text)) {
+    model = createCylinderModel(text);
+  } else if (/圆锥/.test(text)) {
+    model = createConeModel(text);
+  } else if (/圆台/.test(text)) {
+    model = createFrustumModel(text);
+  } else if (/球|球面/.test(text) && !/椭球/.test(text)) {
+    model = createSphereModel(text);
+  } else if (/椭球面|椭球/.test(text)) {
+    model = createEllipsoidModel(text);
+  } else if (/双曲面/.test(text)) {
+    model = createHyperboloidModel(text);
+  } else if (/抛物面/.test(text)) {
+    model = createParaboloidModel(text);
+  } else if (/直.*棱柱|棱柱/.test(text)) {
+    model = createPrismModel(text);
+  } else if (/正五棱锥|正六棱锥|正棱锥/.test(text)) {
+    model = createRegularPyramidModel(text);
   } else if (/三棱锥|三角锥|四面体|正三棱锥/.test(text)) {
     model = createTriPyramidModel(text);
   } else if (/四棱锥|正四棱锥/.test(text)) {
@@ -1891,14 +1969,18 @@ function buildModelFromText(rawText) {
     model = createGenericPyramidModel(text);
   } else if (/三角形|△/.test(text)) {
     model = createTriangleModel(text);
-  } else if (/(椭圆|双曲线|抛物线|圆|直线|方程|轨迹|动点)/.test(text) && !/(圆柱|圆锥|球)/.test(text)) {
+  } else if (/(椭圆|双曲线|抛物线|圆|直线|方程|轨迹|动点)/.test(text) && !/(圆柱|圆锥|圆台|球|椭球面|椭球|双曲面|抛物面|柱面)/.test(text)) {
     model = createAnalytic2DModel(text);
+  } else if (hasCoordinateInput(text)) {
+    model = createCoordinateModel(text);
   } else {
     throw new Error("暂未识别该题型。");
   }
 
+  applyExplicitCoordinates(model, text);
   applyTextFeatures(model, text);
-  centerModelOnXY(model);
+  applyGivenLengthDisplays(model, text);
+  if (!model.preserveCoordinates) centerModelOnXY(model);
   model.equations = model.equations?.length ? model.equations : buildModelEquations(model);
   model.source = "local";
   return model;
@@ -1906,10 +1988,24 @@ function buildModelFromText(rawText) {
 
 function normalizeText(text) {
   return text
+    .replace(/\\\(|\\\)/g, "")
+    .replace(/\\sqrt\{([^}]+)\}/g, "√$1")
+    .replace(/\\(?:times|cdot)/g, "×")
+    .replace(/\\div/g, "÷")
+    .replace(/\\perp/g, "⊥")
+    .replace(/\\parallel/g, "∥")
+    .replace(/_(\d+)/g, "$1")
     .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
-    .replace(/₁/g, "1")
-    .replace(/₂/g, "2")
+    .replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (char) => "0123456789"["₀₁₂₃₄₅₆₇₈₉".indexOf(char)])
     .replace(/＝/g, "=")
+    .replace(/×/g, "*")
+    .replace(/÷/g, "/")
+    .replace(/∥/g, "//")
+    .replace(/[（〔［【]/g, "(")
+    .replace(/[）〕］】]/g, ")")
+    .replace(/[，、]/g, ",")
+    .replace(/[；]/g, ";")
+    .replace(/[：]/g, ":")
     .replace(/\s+/g, "")
     .trim();
 }
@@ -1923,8 +2019,10 @@ function createBaseModel(type, title, description) {
     segments: [],
     faces: [],
     curves: [],
+    surfaces: [],
     relations: [],
     equations: [],
+    dimensions: {},
   };
 }
 
@@ -1932,9 +2030,10 @@ function createCubeModel(text) {
   const labels = parseBoxNotation(text, "正方体");
   const [a, b, c, d] = labels.bottom;
   const [a1, b1, c1, d1] = labels.top;
-  const side = parseGlobalLength(text, 2);
+  const sideInfo = parseGlobalLengthInfo(text, 2);
+  const side = sideInfo.value;
   const h = side;
-  const model = createBaseModel("cube", "正方体模型", `边长 ${formatNumber(side)}，自动标注 8 个顶点。`);
+  const model = createBaseModel("cube", "正方体模型", `边长 ${formatDimension(sideInfo)}，自动标注 8 个顶点。`);
   const half = side / 2;
 
   addPoint(model, a, -half, -half, 0, "底面顶点");
@@ -1953,7 +2052,7 @@ function createCubeModel(text) {
   addFace(model, `平面${b}${c}${c1}${b1}`, [b, c, c1, b1]);
   addFace(model, `平面${c}${d}${d1}${c1}`, [c, d, d1, c1]);
   addFace(model, `平面${d}${a}${a1}${d1}`, [d, a, a1, d1]);
-  addRelation(model, `正方体边长 = ${formatNumber(side)}`);
+  addRelation(model, `正方体边长 = ${formatDimension(sideInfo)}`);
   addRelation(model, `点位映射：底面 ${labels.bottom.join("、")}；上底 ${labels.top.join("、")}`);
   return model;
 }
@@ -2104,6 +2203,533 @@ function createSquarePyramidModel(text) {
   return model;
 }
 
+function createCylinderModel(text) {
+  const radiusInfo = parseRadiusInfo(text, 2);
+  const heightInfo = parseHeightInfo(text, 4);
+  const radius = radiusInfo.value;
+  const height = heightInfo.value;
+  const radiusText = formatDimension(radiusInfo);
+  const heightText = formatDimension(heightInfo);
+  const bottomCenter = parseNamedLabel(text, ["底面圆心", "下底圆心"], "O");
+  const topCenter = parseNamedLabel(text, ["上底圆心", "顶面圆心"], "O1");
+  const model = createBaseModel("cylinder", "圆柱模型", `底面半径 ${radiusText}，高 ${heightText}。`);
+
+  addPoint(model, bottomCenter, 0, 0, 0, "底面圆心");
+  addPoint(model, topCenter, 0, 0, height, "上底圆心");
+  addPoint(model, "A", radius, 0, 0, "底面圆上一点");
+  addPoint(model, "A1", radius, 0, height, "上底圆上一点");
+  setPointDisplayPosition(model, topCenter, { x: "0", y: "0", z: heightText });
+  setPointDisplayPosition(model, "A", { x: radiusText, y: "0", z: "0" });
+  setPointDisplayPosition(model, "A1", { x: radiusText, y: "0", z: heightText });
+  addSegment(model, bottomCenter, topCenter, "aux", "轴线");
+  addSegment(model, bottomCenter, "A", "aux", "底面半径");
+  addSegment(model, "A", "A1", "edge", "母线");
+  addCurve(model, "下底圆", circleCurve(radius, 0), `x^2+y^2=${formatNumber(radius * radius)}`);
+  addCurve(model, "上底圆", circleCurve(radius, height), `x^2+y^2=${formatNumber(radius * radius)}, z=${heightText}`);
+  addSurface(model, "圆柱侧面", makeParametricSurface(48, 12, (u, v) => {
+    const angle = u * Math.PI * 2;
+    return { x: radius * Math.cos(angle), y: radius * Math.sin(angle), z: v * height };
+  }, true), `半径 ${radiusText}，高 ${heightText}`);
+  addSurface(model, "圆柱下底面", makeDiskSurface(radius, 0, false), "底面圆盘");
+  addSurface(model, "圆柱上底面", makeDiskSurface(radius, height, true), "上底圆盘");
+  addRelation(model, `${bottomCenter}${topCenter} 为圆柱轴线`);
+  addDefaultDimensionNotice(model, [radiusInfo, heightInfo]);
+  model.dimensions = { radius, height };
+  model.equations.push(`圆柱：x^2 + y^2 = ${formatNumber(radius * radius)}，0 <= z <= ${heightText}`);
+  model.volume = Math.PI * radius * radius * height;
+  return model;
+}
+
+function createConeModel(text) {
+  const radiusInfo = parseRadiusInfo(text, 2);
+  const heightInfo = parseHeightInfo(text, 3);
+  const radius = radiusInfo.value;
+  const height = heightInfo.value;
+  const radiusText = formatDimension(radiusInfo);
+  const heightText = formatDimension(heightInfo);
+  const parsed = text.match(/圆锥([A-Z][0-9]?)[-－—]([A-Z][0-9]?)/);
+  const apex = parsed?.[1] || "P";
+  const center = parsed?.[2] || parseNamedLabel(text, ["底面圆心", "圆心"], "O");
+  const model = createBaseModel("cone", "圆锥模型", `底面半径 ${radiusText}，高 ${heightText}。`);
+
+  addPoint(model, center, 0, 0, 0, "底面圆心");
+  addPoint(model, apex, 0, 0, height, "顶点");
+  addPoint(model, "A", radius, 0, 0, "底面圆上一点");
+  setPointDisplayPosition(model, apex, { x: "0", y: "0", z: heightText });
+  setPointDisplayPosition(model, "A", { x: radiusText, y: "0", z: "0" });
+  addSegment(model, center, apex, "aux", "高");
+  addSegment(model, center, "A", "aux", "底面半径");
+  addSegment(model, apex, "A", "edge", "母线");
+  addCurve(model, "底面圆", circleCurve(radius, 0), `x^2+y^2=${formatNumber(radius * radius)}`);
+  addSurface(model, "圆锥侧面", makeParametricSurface(48, 16, (u, v) => {
+    const angle = u * Math.PI * 2;
+    const currentRadius = radius * (1 - v);
+    return { x: currentRadius * Math.cos(angle), y: currentRadius * Math.sin(angle), z: v * height };
+  }, true), `底面半径 ${radiusText}，高 ${heightText}`);
+  addSurface(model, "圆锥底面", makeDiskSurface(radius, 0, false), "底面圆盘");
+  addRelation(model, `${apex}${center} ⟂ 底面圆`);
+  addDefaultDimensionNotice(model, [radiusInfo, heightInfo]);
+  model.dimensions = { radius, height };
+  model.equations.push(`圆锥：x^2 + y^2 = (${formatNumber(radius / height)}(${heightText} - z))^2，0 <= z <= ${heightText}`);
+  model.volume = (Math.PI * radius * radius * height) / 3;
+  return model;
+}
+
+function createSphereModel(text) {
+  const radiusInfo = parseRadiusInfo(text, 3);
+  const radius = radiusInfo.value;
+  const radiusText = formatDimension(radiusInfo);
+  const center = parseNamedLabel(text, ["球心", "圆心"], text.match(/球([A-Z][0-9]?)/)?.[1] || "O");
+  const model = createBaseModel("sphere", "球模型", `球心 ${displayLabelText(center)}，半径 ${radiusText}。`);
+
+  addPoint(model, center, 0, 0, 0, "球心");
+  addPoint(model, "A", radius, 0, 0, "球面点");
+  addPoint(model, "B", 0, radius, 0, "球面点");
+  addPoint(model, "C", 0, 0, radius, "球面点");
+  setPointDisplayPosition(model, "A", { x: radiusText, y: "0", z: "0" });
+  setPointDisplayPosition(model, "B", { x: "0", y: radiusText, z: "0" });
+  setPointDisplayPosition(model, "C", { x: "0", y: "0", z: radiusText });
+  addSegment(model, center, "A", "aux", "半径");
+  addSegment(model, center, "B", "aux", "半径");
+  addSegment(model, center, "C", "aux", "半径");
+  addCurve(model, "赤道圆", circleCurve(radius, 0), `x^2+y^2=${formatNumber(radius * radius)}`);
+  addCurve(model, "经线圆", sampleParametricCurve((t) => {
+    const angle = t * Math.PI * 2;
+    return { x: radius * Math.cos(angle), y: 0, z: radius * Math.sin(angle) };
+  }, 112, true), "x-z 平面截圆");
+  addSurface(model, "球面", makeParametricSurface(56, 24, (u, v) => {
+    const theta = u * Math.PI * 2;
+    const phi = v * Math.PI;
+    return {
+      x: radius * Math.sin(phi) * Math.cos(theta),
+      y: radius * Math.sin(phi) * Math.sin(theta),
+      z: radius * Math.cos(phi),
+    };
+  }, true), `半径 ${radiusText}`);
+  addDefaultDimensionNotice(model, [radiusInfo]);
+  model.dimensions = { radius };
+  model.equations.push(`球面：x^2 + y^2 + z^2 = ${formatNumber(radius * radius)}`);
+  model.volume = (4 * Math.PI * radius ** 3) / 3;
+  return model;
+}
+
+function createFrustumModel(text) {
+  const bottomInfo = parseRadiusInfo(text, 2.4, ["下底半径", "底面半径", "大半径", "R"]);
+  const topInfo = parseRadiusInfo(text, 1.2, ["上底半径", "顶面半径", "小半径", "r"]);
+  const heightInfo = parseHeightInfo(text, 3);
+  const bottomRadius = Math.max(bottomInfo.value, topInfo.value);
+  const topRadius = Math.min(bottomInfo.value, topInfo.value);
+  const bottomText = bottomInfo.value >= topInfo.value ? formatDimension(bottomInfo) : formatDimension(topInfo);
+  const topText = bottomInfo.value >= topInfo.value ? formatDimension(topInfo) : formatDimension(bottomInfo);
+  const height = heightInfo.value;
+  const heightText = formatDimension(heightInfo);
+  const model = createBaseModel("frustum", "圆台模型", `下底半径 ${bottomText}，上底半径 ${topText}，高 ${heightText}。`);
+
+  addPoint(model, "O", 0, 0, 0, "下底圆心");
+  addPoint(model, "O1", 0, 0, height, "上底圆心");
+  addPoint(model, "A", bottomRadius, 0, 0, "下底圆上一点");
+  addPoint(model, "A1", topRadius, 0, height, "上底圆上一点");
+  setPointDisplayPosition(model, "O1", { x: "0", y: "0", z: heightText });
+  setPointDisplayPosition(model, "A", { x: bottomText, y: "0", z: "0" });
+  setPointDisplayPosition(model, "A1", { x: topText, y: "0", z: heightText });
+  addSegment(model, "O", "O1", "aux", "轴线");
+  addSegment(model, "O", "A", "aux", "下底半径");
+  addSegment(model, "O1", "A1", "aux", "上底半径");
+  addSegment(model, "A", "A1", "edge", "母线");
+  addCurve(model, "下底圆", circleCurve(bottomRadius, 0), `x^2+y^2=${formatNumber(bottomRadius * bottomRadius)}`);
+  addCurve(model, "上底圆", circleCurve(topRadius, height), `x^2+y^2=${formatNumber(topRadius * topRadius)}`);
+  addSurface(model, "圆台侧面", makeParametricSurface(48, 14, (u, v) => {
+    const angle = u * Math.PI * 2;
+    const currentRadius = bottomRadius + (topRadius - bottomRadius) * v;
+    return { x: currentRadius * Math.cos(angle), y: currentRadius * Math.sin(angle), z: v * height };
+  }, true), `下底 ${bottomText}，上底 ${topText}，高 ${heightText}`);
+  addSurface(model, "圆台下底面", makeDiskSurface(bottomRadius, 0, false), "下底圆盘");
+  addSurface(model, "圆台上底面", makeDiskSurface(topRadius, height, true), "上底圆盘");
+  addDefaultDimensionNotice(model, [bottomInfo, topInfo, heightInfo]);
+  model.dimensions = { bottomRadius, topRadius, height };
+  model.equations.push(`圆台：r(z)=${bottomText}+(${formatNumber(topRadius - bottomRadius)}/${heightText})z，0 <= z <= ${heightText}`);
+  model.volume = (Math.PI * height * (bottomRadius ** 2 + bottomRadius * topRadius + topRadius ** 2)) / 3;
+  return model;
+}
+
+function createEllipsoidModel(text) {
+  const aInfo = parseNamedNumberInfo(text, ["长半轴", "半轴a", "a"], 3, "a");
+  const bInfo = parseNamedNumberInfo(text, ["短半轴", "半轴b", "b"], 2, "b");
+  const cInfo = parseNamedNumberInfo(text, ["竖半轴", "半轴c", "c"], 1.5, "c");
+  const a = aInfo.value;
+  const b = bInfo.value;
+  const c = cInfo.value;
+  const model = createBaseModel("ellipsoid", "椭球面模型", `a=${formatDimension(aInfo)}，b=${formatDimension(bInfo)}，c=${formatDimension(cInfo)}。`);
+
+  addPoint(model, "O", 0, 0, 0, "中心");
+  addPoint(model, "A", a, 0, 0, "x轴端点");
+  addPoint(model, "B", 0, b, 0, "y轴端点");
+  addPoint(model, "C", 0, 0, c, "z轴端点");
+  setPointDisplayPosition(model, "A", { x: formatDimension(aInfo), y: "0", z: "0" });
+  setPointDisplayPosition(model, "B", { x: "0", y: formatDimension(bInfo), z: "0" });
+  setPointDisplayPosition(model, "C", { x: "0", y: "0", z: formatDimension(cInfo) });
+  addCurve(model, "赤道椭圆", sampleParametricCurve((t) => {
+    const angle = t * Math.PI * 2;
+    return { x: a * Math.cos(angle), y: b * Math.sin(angle), z: 0 };
+  }, 112, true), "z=0 截面");
+  addSurface(model, "椭球面", makeParametricSurface(56, 24, (u, v) => {
+    const theta = u * Math.PI * 2;
+    const phi = v * Math.PI;
+    return {
+      x: a * Math.sin(phi) * Math.cos(theta),
+      y: b * Math.sin(phi) * Math.sin(theta),
+      z: c * Math.cos(phi),
+    };
+  }, true), "三半轴椭球面");
+  addDefaultDimensionNotice(model, [aInfo, bInfo, cInfo]);
+  model.dimensions = { a, b, c };
+  model.equations.push(`椭球面：x^2/${formatNumber(a * a)} + y^2/${formatNumber(b * b)} + z^2/${formatNumber(c * c)} = 1`);
+  model.volume = (4 * Math.PI * a * b * c) / 3;
+  return model;
+}
+
+function createHyperboloidModel(text) {
+  const aInfo = parseNamedNumberInfo(text, ["实半轴a", "半轴a", "a"], 1.4, "a");
+  const bInfo = parseNamedNumberInfo(text, ["实半轴b", "半轴b", "b"], 1.1, "b");
+  const cInfo = parseNamedNumberInfo(text, ["虚半轴", "半轴c", "c"], 1.2, "c");
+  const heightInfo = parseHeightInfo(text, 2.6);
+  const a = aInfo.value;
+  const b = bInfo.value;
+  const c = cInfo.value;
+  const height = heightInfo.value;
+  const twoSheet = /双叶/.test(text);
+  const model = createBaseModel(twoSheet ? "hyperboloid-two" : "hyperboloid-one", twoSheet ? "双叶双曲面模型" : "单叶双曲面模型", `a=${formatDimension(aInfo)}，b=${formatDimension(bInfo)}，c=${formatDimension(cInfo)}。`);
+
+  addPoint(model, "O", 0, 0, 0, "中心");
+  addPoint(model, "A", a, 0, 0, "参考点");
+  addPoint(model, "C", 0, 0, c, "轴上点");
+  if (twoSheet) {
+    addSurface(model, "上叶双曲面", makeParametricSurface(48, 16, (u, v) => {
+      const theta = u * Math.PI * 2;
+      const z = c + height * v;
+      const factor = Math.sqrt((z * z) / (c * c) - 1);
+      return { x: a * factor * Math.cos(theta), y: b * factor * Math.sin(theta), z };
+    }, true), "z 轴方向上叶");
+    addSurface(model, "下叶双曲面", makeParametricSurface(48, 16, (u, v) => {
+      const theta = u * Math.PI * 2;
+      const z = -c - height * v;
+      const factor = Math.sqrt((z * z) / (c * c) - 1);
+      return { x: a * factor * Math.cos(theta), y: b * factor * Math.sin(theta), z };
+    }, true), "z 轴方向下叶");
+    model.equations.push(`双叶双曲面：z^2/${formatNumber(c * c)} - x^2/${formatNumber(a * a)} - y^2/${formatNumber(b * b)} = 1`);
+  } else {
+    addSurface(model, "单叶双曲面", makeParametricSurface(56, 22, (u, v) => {
+      const theta = u * Math.PI * 2;
+      const z = -height + 2 * height * v;
+      const factor = Math.sqrt(1 + (z * z) / (c * c));
+      return { x: a * factor * Math.cos(theta), y: b * factor * Math.sin(theta), z };
+    }, true), "z 轴方向单叶");
+    addCurve(model, "腰椭圆", sampleParametricCurve((t) => {
+      const angle = t * Math.PI * 2;
+      return { x: a * Math.cos(angle), y: b * Math.sin(angle), z: 0 };
+    }, 112, true), "z=0 截面");
+    model.equations.push(`单叶双曲面：x^2/${formatNumber(a * a)} + y^2/${formatNumber(b * b)} - z^2/${formatNumber(c * c)} = 1`);
+  }
+  addDefaultDimensionNotice(model, [aInfo, bInfo, cInfo, heightInfo]);
+  model.dimensions = { a, b, c, height };
+  return model;
+}
+
+function createParaboloidModel(text) {
+  const aInfo = parseNamedNumberInfo(text, ["尺度a", "半轴a", "a"], 1.4, "a");
+  const bInfo = parseNamedNumberInfo(text, ["尺度b", "半轴b", "b"], 1.2, "b");
+  const heightInfo = parseHeightInfo(text, 3);
+  const a = aInfo.value;
+  const b = bInfo.value;
+  const height = heightInfo.value;
+  const saddle = /双曲抛物面|马鞍/.test(text);
+  const model = createBaseModel(saddle ? "hyperbolic-paraboloid" : "elliptic-paraboloid", saddle ? "双曲抛物面模型" : "椭圆抛物面模型", saddle ? "按马鞍面 z=x^2/a^2-y^2/b^2 示意。" : "按 z=x^2/a^2+y^2/b^2 示意。");
+
+  addPoint(model, "O", 0, 0, 0, "顶点");
+  addPoint(model, "A", a, 0, saddle ? 1 : 1, "参考点");
+  addSurface(model, saddle ? "双曲抛物面" : "椭圆抛物面", makeParametricSurface(28, 28, (u, v) => {
+    const x = -a * 2 + a * 4 * u;
+    const y = -b * 2 + b * 4 * v;
+    const z = saddle ? (x * x) / (a * a) - (y * y) / (b * b) : ((x * x) / (a * a) + (y * y) / (b * b)) * (height / 8);
+    return { x, y, z };
+  }), saddle ? "马鞍面" : "开口向 z 轴正向");
+  addDefaultDimensionNotice(model, [aInfo, bInfo, heightInfo]);
+  model.dimensions = { a, b, height };
+  model.equations.push(saddle
+    ? `双曲抛物面：z = x^2/${formatNumber(a * a)} - y^2/${formatNumber(b * b)}`
+    : `椭圆抛物面：z = (${formatNumber(height / 8)})(x^2/${formatNumber(a * a)} + y^2/${formatNumber(b * b)})`);
+  return model;
+}
+
+function createQuadraticCylinderModel(text) {
+  if (/双曲柱面/.test(text)) return createHyperbolicCylinderModel(text);
+  if (/抛物柱面/.test(text)) return createParabolicCylinderModel(text);
+  return createEllipticCylinderModel(text);
+}
+
+function createEllipticCylinderModel(text) {
+  const aInfo = parseNamedNumberInfo(text, ["长半轴", "半轴a", "a"], 2, "a");
+  const bInfo = parseNamedNumberInfo(text, ["短半轴", "半轴b", "b"], 1.2, "b");
+  const heightInfo = parseHeightInfo(text, 4);
+  const a = aInfo.value;
+  const b = bInfo.value;
+  const height = heightInfo.value;
+  const model = createBaseModel("elliptic-cylinder", "椭圆柱面模型", `a=${formatNumber(a)}，b=${formatNumber(b)}，高 ${formatNumber(height)}。`);
+  addPoint(model, "O", 0, 0, 0, "下底中心");
+  addPoint(model, "O1", 0, 0, height, "上底中心");
+  addSurface(model, "椭圆柱面", makeParametricSurface(48, 12, (u, v) => {
+    const angle = u * Math.PI * 2;
+    return { x: a * Math.cos(angle), y: b * Math.sin(angle), z: v * height };
+  }, true), "沿 z 轴延展");
+  addCurve(model, "底面椭圆", sampleParametricCurve((t) => {
+    const angle = t * Math.PI * 2;
+    return { x: a * Math.cos(angle), y: b * Math.sin(angle), z: 0 };
+  }, 112, true), "z=0 截面");
+  addDefaultDimensionNotice(model, [aInfo, bInfo, heightInfo]);
+  model.equations.push(`椭圆柱面：x^2/${formatNumber(a * a)} + y^2/${formatNumber(b * b)} = 1`);
+  return model;
+}
+
+function createHyperbolicCylinderModel(text) {
+  const aInfo = parseNamedNumberInfo(text, ["实半轴", "半轴a", "a"], 1.4, "a");
+  const bInfo = parseNamedNumberInfo(text, ["虚半轴", "半轴b", "b"], 1, "b");
+  const heightInfo = parseHeightInfo(text, 4);
+  const a = aInfo.value;
+  const b = bInfo.value;
+  const height = heightInfo.value;
+  const model = createBaseModel("hyperbolic-cylinder", "双曲柱面模型", `a=${formatNumber(a)}，b=${formatNumber(b)}，高 ${formatNumber(height)}。`);
+  ["右支柱面", "左支柱面"].forEach((label, branchIndex) => {
+    const sign = branchIndex === 0 ? 1 : -1;
+    addSurface(model, label, makeParametricSurface(24, 16, (u, v) => {
+      const t = -1.4 + 2.8 * u;
+      return { x: sign * a * Math.cosh(t), y: b * Math.sinh(t), z: v * height };
+    }), "沿 z 轴延展");
+  });
+  addPoint(model, "O", 0, 0, 0, "中心");
+  addDefaultDimensionNotice(model, [aInfo, bInfo, heightInfo]);
+  model.equations.push(`双曲柱面：x^2/${formatNumber(a * a)} - y^2/${formatNumber(b * b)} = 1`);
+  return model;
+}
+
+function createParabolicCylinderModel(text) {
+  const pInfo = parseNamedNumberInfo(text, ["焦参数", "参数p", "p"], 1, "p");
+  const heightInfo = parseHeightInfo(text, 4);
+  const p = pInfo.value;
+  const height = heightInfo.value;
+  const model = createBaseModel("parabolic-cylinder", "抛物柱面模型", `p=${formatNumber(p)}，高 ${formatNumber(height)}。`);
+  addPoint(model, "O", 0, 0, 0, "顶点线起点");
+  addPoint(model, "O1", 0, 0, height, "顶点线终点");
+  addSegment(model, "O", "O1", "aux", "顶点母线");
+  addSurface(model, "抛物柱面", makeParametricSurface(30, 14, (u, v) => {
+    const y = -3 * p + 6 * p * u;
+    return { x: (y * y) / (4 * p), y, z: v * height };
+  }), "沿 z 轴延展");
+  addDefaultDimensionNotice(model, [pInfo, heightInfo]);
+  model.equations.push(`抛物柱面：y^2 = ${formatNumber(4 * p)}x`);
+  return model;
+}
+
+function createPrismModel(text) {
+  const parsed = parsePrismNotation(text);
+  const count = parsed?.bottom.length || parseChineseSideCount(text, 3);
+  const sideInfo = parseNamedNumberInfo(text, ["底面边长", "边长", "棱长"], parseGlobalLength(text, 2), "底面边长");
+  const heightInfo = parseHeightInfo(text, 3);
+  const side = sideInfo.value;
+  const height = heightInfo.value;
+  const bottom = parsed?.bottom || defaultPolygonLabels(count);
+  const top = parsed?.top || bottom.map((label) => `${label}1`);
+  const radius = side / (2 * Math.sin(Math.PI / count));
+  const basePoints = regularPolygonPoints(count, radius, 0);
+  const model = createBaseModel("prism", `直${countText(count)}棱柱模型`, `${bottom.join("")}-${top.join("")}，底面边长 ${formatNumber(side)}，高 ${formatNumber(height)}。`);
+
+  bottom.forEach((label, index) => addPoint(model, label, basePoints[index].x, basePoints[index].y, 0, "下底顶点"));
+  top.forEach((label, index) => addPoint(model, label, basePoints[index].x, basePoints[index].y, height, "上底顶点"));
+  for (let index = 0; index < count; index += 1) {
+    addSegment(model, bottom[index], bottom[(index + 1) % count], "edge", "下底边");
+    addSegment(model, top[index], top[(index + 1) % count], "edge", "上底边");
+    addSegment(model, bottom[index], top[index], "edge", "侧棱");
+    addFace(model, `平面${bottom[index]}${bottom[(index + 1) % count]}${top[(index + 1) % count]}${top[index]}`, [bottom[index], bottom[(index + 1) % count], top[(index + 1) % count], top[index]]);
+  }
+  addFace(model, `平面${bottom.join("")}`, bottom);
+  addFace(model, `平面${top.join("")}`, top);
+  addRelation(model, `点位映射：下底 ${bottom.join("、")}；上底 ${top.join("、")}`);
+  addDefaultDimensionNotice(model, [sideInfo, heightInfo]);
+  model.dimensions = { side, height, count };
+  model.volume = polygonArea(count, radius) * height;
+  return model;
+}
+
+function createRegularPyramidModel(text) {
+  const count = parseChineseSideCount(text, 4);
+  const parsed = parseRegularPyramidNotation(text, count);
+  const sideInfo = parseNamedNumberInfo(text, ["底面边长", "边长", "棱长"], parseGlobalLength(text, 2), "底面边长");
+  const heightInfo = parseHeightInfo(text, 2.8);
+  const side = sideInfo.value;
+  const height = heightInfo.value;
+  const apex = parsed?.apex || "P";
+  const base = parsed?.base || defaultPolygonLabels(count);
+  const radius = side / (2 * Math.sin(Math.PI / count));
+  const basePoints = regularPolygonPoints(count, radius, 0);
+  const model = createBaseModel("regular-pyramid", `正${countText(count)}棱锥模型`, `${apex}-${base.join("")}，底面边长 ${formatNumber(side)}，高 ${formatNumber(height)}。`);
+
+  base.forEach((label, index) => addPoint(model, label, basePoints[index].x, basePoints[index].y, 0, "底面顶点"));
+  addPoint(model, apex, 0, 0, height, "顶点");
+  addPoint(model, "O", 0, 0, 0, "底面中心");
+  for (let index = 0; index < count; index += 1) {
+    addSegment(model, base[index], base[(index + 1) % count], "edge", "底边");
+    addSegment(model, apex, base[index], "edge", "侧棱");
+    addFace(model, `平面${apex}${base[index]}${base[(index + 1) % count]}`, [apex, base[index], base[(index + 1) % count]]);
+  }
+  addSegment(model, apex, "O", "aux", "高");
+  addFace(model, `平面${base.join("")}`, base);
+  addRelation(model, `底面${base.join("")} 为正${countText(count)}形`);
+  addRelation(model, `${apex}O ⟂ 平面${base.join("")}`);
+  addRelation(model, `点位映射：${apex} 为顶点；${base.join("、")} 为底面顶点`);
+  addDefaultDimensionNotice(model, [sideInfo, heightInfo]);
+  model.dimensions = { side, height, count };
+  model.volume = (polygonArea(count, radius) * height) / 3;
+  return model;
+}
+
+function createRegularTetrahedronModel(text) {
+  const labels = splitPointLabels(text.match(/正四面体((?:[A-Z][0-9]?){4})/)?.[1] || "").slice(0, 4);
+  const [a, b, c, d] = labels.length === 4 ? labels : ["A", "B", "C", "D"];
+  const sideInfo = parseNamedNumberInfo(text, ["棱长", "边长"], parseGlobalLength(text, 2), "棱长");
+  const side = sideInfo.value;
+  const half = side / 2;
+  const baseY = -Math.sqrt(3) * side / 6;
+  const apexHeight = Math.sqrt(2 / 3) * side;
+  const model = createBaseModel("regular-tetrahedron", "正四面体模型", `${a}${b}${c}${d}，棱长 ${formatNumber(side)}。`);
+
+  addPoint(model, a, -half, baseY, 0, "顶点");
+  addPoint(model, b, half, baseY, 0, "顶点");
+  addPoint(model, c, 0, Math.sqrt(3) * side / 3, 0, "顶点");
+  addPoint(model, d, 0, 0, apexHeight, "顶点");
+  [[a, b], [b, c], [c, a], [d, a], [d, b], [d, c]].forEach(([from, to]) => addSegment(model, from, to, "edge", "棱"));
+  addFace(model, `平面${a}${b}${c}`, [a, b, c]);
+  addFace(model, `平面${d}${a}${b}`, [d, a, b]);
+  addFace(model, `平面${d}${b}${c}`, [d, b, c]);
+  addFace(model, `平面${d}${c}${a}`, [d, c, a]);
+  addRelation(model, `正四面体四个面均为等边三角形`);
+  addRelation(model, `点位映射：${a}、${b}、${c} 为底面；${d} 为上方顶点`);
+  addDefaultDimensionNotice(model, [sideInfo]);
+  model.dimensions = { side };
+  model.volume = side ** 3 / (6 * Math.sqrt(2));
+  return model;
+}
+
+function isCompositeGeometryText(text) {
+  if (!/(正方体|长方体)/.test(text)) return false;
+  return /(圆柱|球|圆形|截面圆|多个圆|两个圆|圆[A-Z][0-9]?|相交|穿过|截)/.test(text);
+}
+
+function createCompositeGeometryModel(text) {
+  const model = /正方体/.test(text) ? createCubeModel(text) : createCuboidModel(text);
+  const bounds = computeBounds(model);
+  model.type = "composite";
+  model.title = "组合几何模型";
+  model.description = `${model.description} 已在同一坐标系中叠加圆形、圆柱或截面关系。`;
+  addRelation(model, "组合模型：所有形体共用同一三维坐标系。");
+
+  const hasCylinder = /圆柱/.test(text) || /穿过|贯穿/.test(text);
+  const hasSphere = /球/.test(text) && !/椭球/.test(text);
+  if (hasCylinder) addCompositeCylinder(model, text, bounds);
+  if (hasSphere) addCompositeSphere(model, text, bounds);
+  addCompositeCircles(model, text, bounds, hasCylinder || hasSphere);
+
+  if ((model.curves || []).some((curve) => /交线|截面/.test(curve.label))) {
+    addRelation(model, "相交或截面部分已用加粗曲线标出，半透明面表示对应圆面或曲面。");
+  }
+  return model;
+}
+
+function addCompositeCylinder(model, text, bounds) {
+  const radiusInfo = parseRadiusInfo(text, Math.min(bounds.size.x, bounds.size.y) / 4);
+  const radius = radiusInfo.value;
+  const radiusText = formatDimension(radiusInfo);
+  const bottom = { x: 0, y: 0, z: bounds.min.z };
+  const top = { x: 0, y: 0, z: bounds.max.z };
+  const bottomLabel = uniquePointLabel(model, "O");
+  const topLabel = uniquePointLabel(model, "O1");
+  addPoint(model, bottomLabel, bottom.x, bottom.y, bottom.z, "圆柱下底圆心");
+  addPoint(model, topLabel, top.x, top.y, top.z, "圆柱上底圆心");
+  addSegment(model, bottomLabel, topLabel, "aux", "圆柱轴线");
+  addCurve(model, "圆柱与下底面交线", circleCurveAt(radius, bottom), `半径 ${radiusText}`);
+  addCurve(model, "圆柱与上底面交线", circleCurveAt(radius, top), `半径 ${radiusText}`);
+  addSurface(model, "组合圆柱侧面", makeParametricSurface(48, 12, (u, v) => {
+    const angle = u * Math.PI * 2;
+    return {
+      x: radius * Math.cos(angle),
+      y: radius * Math.sin(angle),
+      z: bottom.z + (top.z - bottom.z) * v,
+    };
+  }, true), `与长方体相交，半径 ${radiusText}`);
+  addRelation(model, `圆柱半径 = ${radiusText}`);
+}
+
+function addCompositeSphere(model, text, bounds) {
+  const radiusInfo = parseRadiusInfo(text, Math.min(bounds.size.x, bounds.size.y, bounds.size.z) / 3);
+  const radius = radiusInfo.value;
+  const radiusText = formatDimension(radiusInfo);
+  const center = { x: 0, y: 0, z: (bounds.min.z + bounds.max.z) / 2 };
+  const label = uniquePointLabel(model, "S");
+  addPoint(model, label, center.x, center.y, center.z, "球心");
+  addSurface(model, "组合球面", makeParametricSurface(48, 20, (u, v) => {
+    const theta = u * Math.PI * 2;
+    const phi = v * Math.PI;
+    return {
+      x: center.x + radius * Math.sin(phi) * Math.cos(theta),
+      y: center.y + radius * Math.sin(phi) * Math.sin(theta),
+      z: center.z + radius * Math.cos(phi),
+    };
+  }, true), `半径 ${radiusText}`);
+  addCurve(model, "球与中截面交线", circleCurveAt(radius, center), `z=${formatNumber(center.z)} 截面`);
+  addRelation(model, `球半径 = ${radiusText}`);
+}
+
+function addCompositeCircles(model, text, bounds, alreadyHasRoundSolid) {
+  const labels = [];
+  for (const match of text.matchAll(/(?:圆形|截面圆|圆)([A-Z][0-9]?)/g)) {
+    if (match[1] && !labels.includes(match[1])) labels.push(match[1]);
+  }
+  if (/多个圆|两个圆/.test(text)) {
+    ["O", "P"].forEach((label) => {
+      if (!labels.includes(label)) labels.push(label);
+    });
+  }
+  if (!labels.length && !alreadyHasRoundSolid && /圆形|截面圆|圆/.test(text)) labels.push("O");
+  if (!labels.length) return;
+
+  const radiusInfo = parseRadiusInfo(text, Math.min(bounds.size.x, bounds.size.y) / (labels.length > 1 ? 5 : 4));
+  const radius = radiusInfo.value;
+  const radiusText = formatDimension(radiusInfo);
+  const z = /上底面|顶面|上表面/.test(text)
+    ? bounds.max.z
+    : /底面|下底面|下表面/.test(text)
+      ? bounds.min.z
+      : (bounds.min.z + bounds.max.z) / 2;
+  const span = Math.max(bounds.size.x - radius * 2, radius * 2);
+
+  labels.slice(0, 4).forEach((rawLabel, index, array) => {
+    const label = uniquePointLabel(model, rawLabel);
+    const offset = array.length === 1 ? 0 : -span / 2 + (span * index) / (array.length - 1);
+    const center = { x: offset, y: 0, z };
+    addPoint(model, label, center.x, center.y, center.z, "圆心");
+    addCurve(model, `圆${displayLabelText(label)}截面交线`, circleCurveAt(radius, center), `半径 ${radiusText}`);
+    addSurface(model, `圆${displayLabelText(label)}截面圆面`, makeDiskSurfaceAt(radius, center), `半径 ${radiusText}`);
+  });
+}
+
+function uniquePointLabel(model, preferred) {
+  if (!model.points[preferred]) return preferred;
+  const base = preferred.replace(/\d+$/, "") || "P";
+  for (let index = 1; index <= 9; index += 1) {
+    const candidate = `${base}${index}`;
+    if (!model.points[candidate]) return candidate;
+  }
+  return `${base}${Object.keys(model.points).length}`;
+}
+
 function parsePyramidNotation(text, baseCount = 0) {
   const expected = baseCount ? [baseCount] : [4, 3];
   for (const count of expected) {
@@ -2165,6 +2791,11 @@ function formatSegmentFromText(text, first, second) {
 
 function splitPointLabels(value) {
   return String(value || "").match(/[A-Z][0-9]?/g) || [];
+}
+
+function displayLabelText(value) {
+  const subscripts = ["₀", "₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉"];
+  return String(value || "").replace(/\d/g, (digit) => subscripts[Number(digit)] || digit);
 }
 
 function buildTriangleBaseData(text, labels, lengths) {
@@ -2362,6 +2993,69 @@ function sampleRangeCurve(from, to, count, factory) {
   return points;
 }
 
+function circleCurve(radius, z = 0) {
+  return circleCurveAt(radius, { x: 0, y: 0, z });
+}
+
+function circleCurveAt(radius, center = { x: 0, y: 0, z: 0 }, axis = "z") {
+  return sampleParametricCurve((t) => {
+    const angle = t * Math.PI * 2;
+    if (axis === "x") return { x: center.x, y: center.y + radius * Math.cos(angle), z: center.z + radius * Math.sin(angle) };
+    if (axis === "y") return { x: center.x + radius * Math.cos(angle), y: center.y, z: center.z + radius * Math.sin(angle) };
+    return { x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle), z: center.z };
+  }, 112, true);
+}
+
+function makeParametricSurface(uSteps, vSteps, factory, closeU = false) {
+  const vertices = [];
+  const indices = [];
+  for (let vIndex = 0; vIndex < vSteps; vIndex += 1) {
+    const v = vSteps === 1 ? 0 : vIndex / (vSteps - 1);
+    for (let uIndex = 0; uIndex < uSteps; uIndex += 1) {
+      const u = closeU ? uIndex / uSteps : uIndex / Math.max(uSteps - 1, 1);
+      vertices.push(factory(u, v));
+    }
+  }
+
+  for (let vIndex = 0; vIndex < vSteps - 1; vIndex += 1) {
+    for (let uIndex = 0; uIndex < uSteps; uIndex += 1) {
+      if (!closeU && uIndex === uSteps - 1) continue;
+      const nextU = (uIndex + 1) % uSteps;
+      const a = vIndex * uSteps + uIndex;
+      const b = vIndex * uSteps + nextU;
+      const c = (vIndex + 1) * uSteps + uIndex;
+      const d = (vIndex + 1) * uSteps + nextU;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+  return { vertices, indices };
+}
+
+function makeDiskSurface(radius, z, reverse = false, steps = 48) {
+  const vertices = [{ x: 0, y: 0, z }];
+  const indices = [];
+  for (let index = 0; index < steps; index += 1) {
+    const angle = (index / steps) * Math.PI * 2;
+    vertices.push({ x: radius * Math.cos(angle), y: radius * Math.sin(angle), z });
+  }
+  for (let index = 1; index <= steps; index += 1) {
+    const next = index === steps ? 1 : index + 1;
+    if (reverse) indices.push(0, next, index);
+    else indices.push(0, index, next);
+  }
+  return { vertices, indices };
+}
+
+function makeDiskSurfaceAt(radius, center = { x: 0, y: 0, z: 0 }, axis = "z", reverse = false, steps = 48) {
+  const surface = makeDiskSurface(radius, 0, reverse, steps);
+  surface.vertices = surface.vertices.map((point) => {
+    if (axis === "x") return { x: center.x, y: center.y + point.x, z: center.z + point.y };
+    if (axis === "y") return { x: center.x + point.x, y: center.y, z: center.z + point.y };
+    return { x: center.x + point.x, y: center.y + point.y, z: center.z };
+  });
+  return surface;
+}
+
 function addCurve(model, label, points, note = "") {
   model.curves.push({
     id: `curve:${label}`,
@@ -2371,13 +3065,229 @@ function addCurve(model, label, points, note = "") {
   });
 }
 
+function addSurface(model, label, surfaceData, note = "") {
+  if (!surfaceData?.vertices?.length || !surfaceData?.indices?.length) return;
+  model.surfaces.push({
+    id: `surface:${label}`,
+    label,
+    vertices: surfaceData.vertices,
+    indices: surfaceData.indices,
+    note,
+  });
+}
+
 function parseNamedNumber(text, names, fallback) {
+  return parseNamedNumberInfo(text, names, fallback).value;
+}
+
+function parseNamedNumberInfo(text, names, fallback, label = names[0]) {
   for (const name of names) {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const match = text.match(new RegExp(`${escaped}(?:为|是|=)?(-?\\d+(?:\\.\\d+)?)`));
-    if (match) return Math.abs(Number(match[1])) || fallback;
+    const match = text.match(new RegExp(`${escaped}(?:为|是|=|:)?(${mathExpressionPattern()})`));
+    if (match) {
+      const parsed = parseMathExpression(match[1]);
+      if (parsed) return { value: Math.abs(parsed.value) || fallback, display: parsed.display, explicit: true, label };
+    }
+  }
+  return { value: fallback, display: formatNumber(fallback), explicit: false, label };
+}
+
+function parseRadiusInfo(text, fallback, names = ["底面半径", "半径", "r"]) {
+  const radiusInfo = parseNamedNumberInfo(text, names, fallback, "半径");
+  if (radiusInfo.explicit) return radiusInfo;
+  const diameterInfo = parseNamedNumberInfo(text, ["直径", "d"], fallback * 2, "直径");
+  if (diameterInfo.explicit) return { value: diameterInfo.value / 2, display: `${diameterInfo.display}/2`, explicit: true, label: "半径" };
+  return radiusInfo;
+}
+
+function parseHeightInfo(text, fallback) {
+  const named = parseNamedNumberInfo(text, ["高度", "高", "h"], fallback, "高");
+  if (named.explicit) return named;
+  const lengths = parseLengthMap(text);
+  const segment = getLengthInfo(lengths, ["O1O", "OO1", "PO", "OP", "AA1", "A1A"]);
+  return segment ? { ...segment, label: "高" } : named;
+}
+
+function mathExpressionPattern() {
+  const atom = "(?:\\d+(?:\\.\\d+)?√\\d+(?:\\.\\d+)?|√\\d+(?:\\.\\d+)?|根号\\d+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?|\\.\\d+)";
+  return `-?${atom}(?:[+\\-*/]${atom})*`;
+}
+
+function parseMathExpression(rawExpression) {
+  const raw = String(rawExpression || "").trim();
+  if (!raw) return null;
+  let display = raw
+    .replace(/\*/g, "×")
+    .replace(/\//g, "÷")
+    .replace(/根号/g, "√");
+  let js = raw
+    .replace(/根号/g, "√")
+    .replace(/(\d+(?:\.\d+)?)√(\d+(?:\.\d+)?)/g, "$1*Math.sqrt($2)")
+    .replace(/√(\d+(?:\.\d+)?)/g, "Math.sqrt($1)");
+  js = js.replace(/×/g, "*").replace(/÷/g, "/");
+  if (!/^[0-9+\-*/().Mathsqrt\s]+$/.test(js)) return null;
+  try {
+    const value = Function(`"use strict"; return (${js});`)();
+    if (!Number.isFinite(value)) return null;
+    return { value, display };
+  } catch {
+    return null;
+  }
+}
+
+function formatDimension(infoOrValue) {
+  if (infoOrValue && typeof infoOrValue === "object" && "value" in infoOrValue) {
+    return infoOrValue.explicit && infoOrValue.display ? infoOrValue.display : formatNumber(infoOrValue.value);
+  }
+  return formatNumber(infoOrValue);
+}
+
+function parseNamedLabel(text, names, fallback) {
+  for (const name of names) {
+    const match = text.match(new RegExp(`${name}([A-Z][0-9]?)`));
+    if (match) return match[1];
   }
   return fallback;
+}
+
+function addDefaultDimensionNotice(model, infos) {
+  const missing = infos.filter((item) => !item.explicit).map((item) => item.label);
+  if (missing.length) addRelation(model, `未写清${[...new Set(missing)].join("、")}，已使用默认尺寸。`);
+}
+
+function parseChineseSideCount(text, fallback) {
+  if (/六/.test(text)) return 6;
+  if (/五/.test(text)) return 5;
+  if (/四/.test(text)) return 4;
+  if (/三/.test(text)) return 3;
+  return fallback;
+}
+
+function countText(count) {
+  return { 3: "三", 4: "四", 5: "五", 6: "六" }[count] || `${count}`;
+}
+
+function defaultPolygonLabels(count) {
+  return "ABCDEFGHIJKLMNOPQRSTUVWXYZ".slice(0, count).split("");
+}
+
+function regularPolygonPoints(count, radius, z = 0) {
+  const startAngle = -Math.PI / 2;
+  return Array.from({ length: count }, (_, index) => {
+    const angle = startAngle + (index * Math.PI * 2) / count;
+    return { x: radius * Math.cos(angle), y: radius * Math.sin(angle), z };
+  });
+}
+
+function polygonArea(count, radius) {
+  return (count * radius * radius * Math.sin((Math.PI * 2) / count)) / 2;
+}
+
+function parsePrismNotation(text) {
+  const match = text.match(/(?:直[三四五六]?棱柱|[三四五六]?棱柱)([A-Z0-9]+)[-－—]([A-Z0-9]+)/);
+  if (!match) return null;
+  const bottom = splitPointLabels(match[1]);
+  const top = splitPointLabels(match[2]);
+  if (bottom.length < 3 || bottom.length !== top.length) return null;
+  return { bottom, top };
+}
+
+function parseRegularPyramidNotation(text, count) {
+  const explicit = text.match(/正[三四五六]?棱锥([A-Z][0-9]?)[-－—]([A-Z0-9]+)/);
+  if (explicit) {
+    const base = splitPointLabels(explicit[2]).slice(0, count);
+    if (base.length === count) return { apex: explicit[1], base };
+  }
+  const compact = text.match(/正[三四五六]?棱锥((?:[A-Z][0-9]?){4,8})/);
+  if (compact) return compactPyramidMapping(text, splitPointLabels(compact[1]).slice(0, count + 1), count, "正棱锥");
+  return null;
+}
+
+function hasCoordinateInput(text) {
+  return parseCoordinateMap(text).size > 0;
+}
+
+function parseCoordinateMap(text) {
+  const map = new Map();
+  const coordinateRegex = new RegExp(`([A-Z][0-9]?)\\((${mathExpressionPattern()}),(${mathExpressionPattern()})(?:,(${mathExpressionPattern()}))?\\)`, "g");
+  for (const match of text.matchAll(coordinateRegex)) {
+    const x = parseMathExpression(match[2]);
+    const y = parseMathExpression(match[3]);
+    const z = match[4] === undefined ? { value: 0, display: "0" } : parseMathExpression(match[4]);
+    if (!x || !y || !z) continue;
+    map.set(match[1], {
+      x: x.value,
+      y: y.value,
+      z: z.value,
+      display: { x: x.display, y: y.display, z: z.display },
+    });
+  }
+  return map;
+}
+
+function createCoordinateModel(text) {
+  const coordinates = parseCoordinateMap(text);
+  const model = createBaseModel("coordinate-points", "坐标点模型", "按题目给出的显式坐标放置点。");
+  coordinates.forEach((point, label) => addPoint(model, label, point.x, point.y, point.z, "题目给定坐标"));
+  addRelation(model, `已按题目给定坐标放置：${Array.from(coordinates.keys()).join("、")}`);
+  model.preserveCoordinates = true;
+  return model;
+}
+
+function applyExplicitCoordinates(model, text) {
+  const coordinates = parseCoordinateMap(text);
+  if (!coordinates.size) return;
+  const entries = Array.from(coordinates.entries());
+  const anchor = entries.find(([label]) => {
+    const role = model.points[label]?.role || "";
+    return /心|中心|圆心|球心/.test(role);
+  }) || entries.find(([label]) => model.points[label]);
+
+  if (anchor && model.points[anchor[0]]) {
+    const current = model.points[anchor[0]].position;
+    const target = anchor[1];
+    const delta = { x: target.x - current.x, y: target.y - current.y, z: target.z - current.z };
+    if (Math.abs(delta.x) > 0.001 || Math.abs(delta.y) > 0.001 || Math.abs(delta.z) > 0.001) {
+      translateModelGeometry(model, delta);
+    }
+  }
+
+  entries.forEach(([label, point]) => {
+    if (model.points[label]) {
+      model.points[label].position = { x: point.x, y: point.y, z: point.z };
+      model.points[label].displayPosition = point.display;
+      model.points[label].role = model.points[label].role.includes("题目给定坐标")
+        ? model.points[label].role
+        : `${model.points[label].role}，题目给定坐标`;
+    } else {
+      addPoint(model, label, point.x, point.y, point.z, "题目给定坐标");
+      model.points[label].displayPosition = point.display;
+    }
+  });
+  addRelation(model, `显式坐标优先：${entries.map(([label, point]) => `${label}(${formatNumber(point.x)},${formatNumber(point.y)},${formatNumber(point.z)})`).join("、")}`);
+  model.preserveCoordinates = true;
+}
+
+function translateModelGeometry(model, delta) {
+  Object.values(model.points || {}).forEach((point) => {
+    point.position.x += delta.x;
+    point.position.y += delta.y;
+    point.position.z += delta.z;
+  });
+  (model.curves || []).forEach((curve) => {
+    (curve.points || []).forEach((point) => {
+      point.x += delta.x;
+      point.y += delta.y;
+      point.z += delta.z;
+    });
+  });
+  (model.surfaces || []).forEach((surface) => {
+    (surface.vertices || []).forEach((point) => {
+      point.x += delta.x;
+      point.y += delta.y;
+      point.z += delta.z;
+    });
+  });
 }
 
 function applyTextFeatures(model, text) {
@@ -2500,6 +3410,11 @@ function addPoint(model, label, x, y, z, role = "点") {
   };
 }
 
+function setPointDisplayPosition(model, label, displayPosition) {
+  if (!model.points[label]) return;
+  model.points[label].displayPosition = displayPosition;
+}
+
 function addSegment(model, from, to, kind = "edge", note = "") {
   if (!model.points[from] || !model.points[to] || from === to) return;
   const key = segmentKey(from, to);
@@ -2534,14 +3449,26 @@ function addRelation(model, text) {
   model.relations.push(text);
 }
 
+function applyGivenLengthDisplays(model, text) {
+  const lengths = parseLengthMap(text);
+  if (!lengths.size) return;
+  (model.segments || []).forEach((segment) => {
+    const info = getLengthInfo(lengths, [`${segment.from}${segment.to}`, `${segment.to}${segment.from}`]);
+    if (!info) return;
+    segment.displayLength = info.display;
+    segment.givenLengthValue = info.value;
+  });
+}
+
 function selectModelMeasurement() {
   if (!state.currentModel) return;
   state.interactiveObjects.forEach((object) => setHighlight(object, false));
   const metrics = computeModelMetrics(state.currentModel);
-  const parts = (state.currentModel.curves || []).length && !(state.currentModel.faces || []).length
+  const hasSurface = (state.currentModel.surfaces || []).length > 0;
+  const parts = (state.currentModel.curves || []).length && !(state.currentModel.faces || []).length && !hasSurface
     ? [`曲线 ${state.currentModel.curves.length} 条`, "平面解析几何"]
-    : [`总表面积 ${formatNumber(metrics.totalFaceArea)}`];
-  if (!((state.currentModel.curves || []).length && !(state.currentModel.faces || []).length)) {
+    : [`总面积约 ${formatNumber(metrics.totalArea)}`];
+  if (!((state.currentModel.curves || []).length && !(state.currentModel.faces || []).length && !hasSurface)) {
     if (metrics.volume > 0) parts.push(`体积 ${formatNumber(metrics.volume)}`);
     else parts.push("平面图形体积为 0");
   }
@@ -2564,8 +3491,11 @@ function selectModelMeasurement() {
 
 function computeModelMetrics(model) {
   const totalFaceArea = (model.faces || []).reduce((sum, face) => sum + computeFaceArea(model, face), 0);
+  const totalSurfaceArea = (model.surfaces || []).reduce((sum, surface) => sum + computeSurfaceArea(surface), 0);
   return {
     totalFaceArea,
+    totalSurfaceArea,
+    totalArea: totalFaceArea + totalSurfaceArea,
     volume: computeModelVolume(model),
   };
 }
@@ -2583,8 +3513,25 @@ function computeFaceArea(model, face) {
   return area;
 }
 
+function computeSurfaceArea(surface) {
+  const vertices = surface.vertices || [];
+  const indices = surface.indices || [];
+  let area = 0;
+  for (let index = 0; index < indices.length; index += 3) {
+    const a = vertices[indices[index]];
+    const b = vertices[indices[index + 1]];
+    const c = vertices[indices[index + 2]];
+    if (!a || !b || !c) continue;
+    const ab = toVector3(b).sub(toVector3(a));
+    const ac = toVector3(c).sub(toVector3(a));
+    area += ab.cross(ac).length() / 2;
+  }
+  return area;
+}
+
 function computeModelVolume(model) {
   if (!model || model.type === "triangle") return 0;
+  if (Number.isFinite(model.volume)) return model.volume;
   if (model.type === "cube" || model.type === "cuboid") {
     const bounds = computeBounds(model);
     return bounds.size.x * bounds.size.y * bounds.size.z;
@@ -2638,38 +3585,54 @@ function segmentParamEquation(model, segment, title) {
 }
 
 function parseGlobalLength(text, fallback) {
-  const match = text.match(/(?:边长|棱长|底边长)(?:为|是|=)?(\d+(?:\.\d+)?)/);
-  return match ? Number(match[1]) : fallback;
+  return parseGlobalLengthInfo(text, fallback).value;
+}
+
+function parseGlobalLengthInfo(text, fallback) {
+  return parseNamedNumberInfo(text, ["底面边长", "底边长", "边长", "棱长"], fallback, "边长");
 }
 
 function parseLengthMap(text) {
   const map = new Map();
-  const chainRegex = /((?:[A-Z][0-9]?[A-Z][0-9]?=)+)(\d+(?:\.\d+)?)/g;
+  const chainRegex = new RegExp(`((?:[A-Z][0-9]?[A-Z][0-9]?=)+)(${mathExpressionPattern()})`, "g");
   for (const match of text.matchAll(chainRegex)) {
-    const value = Number(match[2]);
+    const parsed = parseMathExpression(match[2]);
+    if (!parsed) continue;
     const segments = match[1].match(/[A-Z][0-9]?[A-Z][0-9]?/g) || [];
-    segments.forEach((segment) => setLength(map, segment, value));
+    segments.forEach((segment) => setLength(map, segment, parsed));
   }
 
-  const directRegex = /([A-Z][0-9]?[A-Z][0-9]?)(?:=|长为|为)(\d+(?:\.\d+)?)/g;
+  const directRegex = new RegExp(`([A-Z][0-9]?[A-Z][0-9]?)(?:=|长为|为)(${mathExpressionPattern()})`, "g");
   for (const match of text.matchAll(directRegex)) {
-    setLength(map, match[1], Number(match[2]));
+    const parsed = parseMathExpression(match[2]);
+    if (parsed) setLength(map, match[1], parsed);
   }
   return map;
 }
 
-function setLength(map, segment, value) {
+function setLength(map, segment, parsed) {
   const endpoints = parseSegmentEndpoints(segment);
   if (!endpoints) return;
-  map.set(`${endpoints[0]}${endpoints[1]}`, value);
-  map.set(`${endpoints[1]}${endpoints[0]}`, value);
+  const info = {
+    value: Math.abs(parsed.value),
+    display: parsed.display,
+    explicit: true,
+    label: segment,
+  };
+  map.set(`${endpoints[0]}${endpoints[1]}`, info);
+  map.set(`${endpoints[1]}${endpoints[0]}`, info);
 }
 
 function getLength(map, keys, fallback) {
+  const info = getLengthInfo(map, keys);
+  return info ? info.value : fallback;
+}
+
+function getLengthInfo(map, keys) {
   for (const key of keys) {
     if (map.has(key)) return map.get(key);
   }
-  return fallback;
+  return null;
 }
 
 function parseSegmentEndpoints(token) {
@@ -2703,6 +3666,12 @@ function centerModelOnXY(model) {
       point.y -= offsetY;
     });
   });
+  (model.surfaces || []).forEach((surface) => {
+    (surface.vertices || []).forEach((point) => {
+      point.x -= offsetX;
+      point.y -= offsetY;
+    });
+  });
 }
 
 function renderModel(model) {
@@ -2716,6 +3685,7 @@ function renderModel(model) {
   state.currentBounds = bounds;
   rebuildGridAndAxes(Math.max(bounds.size.x, bounds.size.y, bounds.size.z, 2) * 3.2);
 
+  (model.surfaces || []).forEach((surface, index) => renderSurface(model, surface, index));
   model.faces.forEach((face, index) => renderFace(model, face, index));
   (model.curves || []).forEach((curve, index) => renderCurve(model, curve, index));
   model.segments.forEach((segment) => renderSegment(model, segment));
@@ -2737,13 +3707,10 @@ function renderFace(model, face, index) {
   const area = computeFaceArea(model, face);
   const geometry = new THREE.BufferGeometry();
   const vertices = [];
+  if (positions.length < 3) return;
 
-  if (positions.length === 3) {
-    positions.forEach((point) => vertices.push(point.x, point.y, point.z));
-  } else if (positions.length === 4) {
-    const order = [0, 1, 2, 0, 2, 3];
-    order.forEach((item) => {
-      const point = positions[item];
+  for (let index = 1; index < positions.length - 1; index += 1) {
+    [positions[0], positions[index], positions[index + 1]].forEach((point) => {
       vertices.push(point.x, point.y, point.z);
     });
   }
@@ -2775,6 +3742,41 @@ function renderFace(model, face, index) {
   state.interactiveObjects.push(mesh);
 }
 
+function renderSurface(model, surface, index) {
+  const vertices = [];
+  (surface.vertices || []).forEach((point) => vertices.push(point.x, point.y, point.z));
+  if (vertices.length < 9) return;
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex(surface.indices || []);
+  geometry.computeVertexNormals();
+
+  const material = new THREE.MeshStandardMaterial({
+    color: colors.surface[index % colors.surface.length],
+    transparent: true,
+    opacity: 0.28,
+    side: THREE.DoubleSide,
+    roughness: 0.68,
+    metalness: 0,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  const center = (surface.vertices || []).reduce((sum, point) => sum.add(toVector3(point)), new THREE.Vector3()).multiplyScalar(1 / surface.vertices.length);
+  const area = computeSurfaceArea(surface);
+  mesh.userData = {
+    elementId: surface.id,
+    type: "surface",
+    label: surface.label,
+    detail: `${surface.label}${surface.note ? `，${surface.note}` : ""}，采样面积约 ${formatNumber(area)}。`,
+    quick: `曲面面积约 ${formatNumber(area)}`,
+    infoPosition: center,
+    baseColor: material.color.clone(),
+    baseOpacity: material.opacity,
+  };
+  state.modelGroup.add(mesh);
+  state.interactiveObjects.push(mesh);
+}
+
 function renderSegment(model, segment) {
   const from = model.points[segment.from].position;
   const to = model.points[segment.to].position;
@@ -2795,12 +3797,13 @@ function renderSegment(model, segment) {
   const direction = end.clone().sub(start).normalize();
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
   mesh.position.copy(midpointVector);
+  const lengthText = segment.displayLength || formatNumber(length);
   mesh.userData = {
     elementId: segment.id,
     type: "line",
-    label: segment.label,
-    detail: `${segment.label}，${segment.note || "线段"}，长度 ${formatNumber(length)}${slope ? `，${slope}` : ""}。`,
-    quick: `${segment.label} = ${formatNumber(length)}${slope ? ` · ${slope}` : ""}`,
+    label: displayLabelText(segment.label),
+    detail: `${displayLabelText(segment.label)}，${segment.note || "线段"}，长度 ${lengthText}${slope ? `，${slope}` : ""}。`,
+    quick: `${displayLabelText(segment.label)} = ${lengthText}${slope ? ` · ${slope}` : ""}`,
     infoPosition: midpointVector.clone(),
     baseColor: material.color.clone(),
     baseOpacity: material.opacity,
@@ -2848,12 +3851,15 @@ function renderPoint(point) {
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(point.position.x, point.position.y, point.position.z);
+  const coordinateText = point.displayPosition
+    ? `(${point.displayPosition.x}, ${point.displayPosition.y}, ${point.displayPosition.z})`
+    : `(${formatNumber(point.position.x)}, ${formatNumber(point.position.y)}, ${formatNumber(point.position.z)})`;
   mesh.userData = {
     elementId: point.id,
     type: "point",
-    label: `点 ${point.label}`,
-    detail: `${point.role}，坐标 (${formatNumber(point.position.x)}, ${formatNumber(point.position.y)}, ${formatNumber(point.position.z)})。`,
-    quick: `${point.label}(${formatNumber(point.position.x)}, ${formatNumber(point.position.y)}, ${formatNumber(point.position.z)})`,
+    label: `点 ${displayLabelText(point.label)}`,
+    detail: `${point.role}，坐标 ${coordinateText}。`,
+    quick: `${displayLabelText(point.label)}${coordinateText}`,
     infoPosition: mesh.position.clone(),
     baseColor: material.color.clone(),
     baseOpacity: 1,
@@ -2861,7 +3867,7 @@ function renderPoint(point) {
   };
   state.modelGroup.add(mesh);
   state.interactiveObjects.push(mesh);
-  createLabel(point.label, mesh.position, "vertex-label", "model", point.id);
+  createLabel(displayLabelText(point.label), mesh.position, "vertex-label", "model", point.id);
 }
 
 function createLabel(text, position, className, kind, elementId = "") {
@@ -2946,23 +3952,24 @@ function renderModelInfo(model) {
 
 function renderElementList(model) {
   const metrics = computeModelMetrics(model);
-  const hasCurveOnly = (model.curves || []).length && !(model.faces || []).length;
+  const hasSurface = (model.surfaces || []).length > 0;
+  const hasCurveOnly = (model.curves || []).length && !(model.faces || []).length && !hasSurface;
   const items = [
     {
       id: "measure:model",
-      label: hasCurveOnly ? "整体曲线" : metrics.volume > 0 ? "整体体积" : "整体面积",
-      meta: hasCurveOnly ? "2D 解析几何" : metrics.volume > 0 ? `体积 ${formatNumber(metrics.volume)}` : `面积 ${formatNumber(metrics.totalFaceArea)}`,
+      label: hasCurveOnly ? "整体曲线" : hasSurface ? "整体曲面" : metrics.volume > 0 ? "整体体积" : "整体面积",
+      meta: hasCurveOnly ? "2D 解析几何" : metrics.volume > 0 ? `体积 ${formatNumber(metrics.volume)}` : `面积 ${formatNumber(metrics.totalArea)}`,
       type: "measure",
     },
     ...Object.values(model.points).map((point) => ({
       id: point.id,
-      label: `点 ${point.label}`,
+      label: `点 ${displayLabelText(point.label)}`,
       meta: point.role,
       type: "point",
     })),
     ...model.segments.map((segment) => ({
       id: segment.id,
-      label: `线段 ${segment.label}`,
+      label: `线段 ${displayLabelText(segment.label)}`,
       meta: segment.note || "线段",
       type: "line",
     })),
@@ -2971,6 +3978,12 @@ function renderElementList(model) {
       label: curve.label,
       meta: curve.note || "曲线",
       type: "curve",
+    })),
+    ...(model.surfaces || []).map((surface) => ({
+      id: surface.id,
+      label: surface.label,
+      meta: surface.note || `面积约 ${formatNumber(computeSurfaceArea(surface))}`,
+      type: "surface",
     })),
     ...model.faces.map((face) => ({
       id: face.id,
@@ -3268,7 +4281,7 @@ function exportScreenshot() {
 
 function showParseError(error) {
   dom.title.textContent = "解析失败";
-  dom.summary.textContent = `${error.message} 当前 MVP 优先支持常见正方体、长方体、三棱锥、三角锥、四面体、四棱锥和三角形。`;
+  dom.summary.textContent = `${error.message} 当前本地规则支持正方体、长方体、棱柱、棱锥、正四面体、圆柱、圆锥、圆台、球、椭球面、双曲面、抛物面、二次柱面和常见平面解析几何。`;
   dom.relationList.innerHTML = "";
   dom.equationList.innerHTML = "";
   updateProblemHints(dom.input.value, error.message);
@@ -3288,6 +4301,7 @@ function computeBounds(model) {
   const values = [
     ...Object.values(model.points).map((point) => point.position),
     ...(model.curves || []).flatMap((curve) => curve.points || []),
+    ...(model.surfaces || []).flatMap((surface) => surface.vertices || []),
   ];
   if (!values.length) {
     values.push({ x: -1, y: -1, z: 0 }, { x: 1, y: 1, z: 0 });

@@ -431,24 +431,32 @@ function normalizeAiModel(input) {
 }
 
 function buildTipsPrompt(text) {
-  return `你是中学几何三维建模输入助手。根据当前输入给出 3 到 5 条整理原文的表达建议。只能改写、归并和规范化原文已经出现的图形类型、点名、长度、垂直/平行/中点/中心关系和连线，不要凭空添加题目没有给出的点、长度、底面形状、高、垂直关系或连线。如果用户只输入“三角锥”“四面体”等几个字，不要补成完整题，在 meta 写清缺少什么，text 只保留整理后的原输入。不要解题，只输出 JSON：{"tips":[{"title":"短标题","meta":"整理内容或缺失项","text":"整理后的原文"}]}。当前输入：${text || "空"}`;
+  return `你是中学几何三维建模输入助手。根据当前输入给出 3 到 5 条整理原文的表达建议。只能改写、归并和规范化原文已经出现的图形类型、点名、长度、垂直/平行/中点/中心关系和连线，不要凭空添加题目没有给出的点、长度、底面形状、高、垂直关系或连线。输出给学生看的题目必须像正常考试题，优先使用 O₁、A₁、√3、×、÷、⊥、∥ 这类常见数学符号，不要输出 \\(...\\)、sqrt(3) 或代码式表达。如果用户只输入“三角锥”“四面体”等几个字，不要补成完整题，在 meta 写清缺少什么，text 只保留整理后的原输入。不要解题，只输出 JSON：{"tips":[{"title":"短标题","meta":"整理内容或缺失项","text":"整理后的原文"}]}。当前输入：${text || "空"}`;
 }
 
 function buildLocalTips(text) {
   const clean = String(text || "").trim();
   const normalized = normalizeTipText(clean);
   const templates = [
+    { title: "圆台", meta: "根号 + 侧面积体积", text: "已知圆台O₁O，上底面圆心为O₁，半径r=1，下底面圆心为O，半径R=3。圆台的高O₁O=2√3，母线AB=4，其中A为上底面圆周上一点，B为下底面圆周上一点，且O₁A⊥O₁O，OB⊥O₁O，O₁A∥OB。求该圆台的侧面积和体积。" },
     { title: "正方体", meta: "中点 + 连线", text: "正方体ABCD-A1B1C1D1，边长为2，E是AB的中点，连接EC1。" },
     { title: "三角形", meta: "平面图形", text: "三角形ABC中，AB=3，BC=4，AC=5，D是AB的中点，连接CD。" },
     { title: "三棱锥", meta: "线面垂直", text: "三棱锥P-ABC，PA垂直于平面ABC，AB垂直于BC，PA=AB=BC=1，连接PB、PC。" },
     { title: "四棱锥", meta: "底面中心 + 高", text: "四棱锥P-ABCD，底面ABCD是正方形，AB=2，O是AC和BD的交点，PO垂直于平面ABCD，PO=2，连接PA、PB、PC、PD。" },
+    { title: "圆柱", meta: "半径 + 高", text: "圆柱，底面圆心O，上底圆心O₁，半径=2，高O₁O=4，连接OO₁。" },
+    { title: "圆锥", meta: "底面半径 + 高", text: "圆锥P-O，底面半径=2，高=3，连接PO。" },
+    { title: "椭球面", meta: "三半轴", text: "椭球面，a=3，b=2，c=1.5。" },
+    { title: "直三棱柱", meta: "底面边长 + 高", text: "直三棱柱ABC-A₁B₁C₁，底面边长=2，高AA₁=3。" },
+    { title: "长方体截面圆", meta: "组合图形 + 交线", text: "长方体ABCD-A₁B₁C₁D₁，AB=6，BC=4，AA₁=4。一个圆柱垂直穿过长方体，圆柱轴线经过上下底面中心，半径=1.5，显示圆柱与长方体上下底面的交线。" },
+    { title: "显式坐标点", meta: "按坐标准确放置", text: "A(1,2,3)，B(4,2,3)，C(1,5,3)，连接AB、BC、CA。" },
   ];
   const matched = templates.filter((tip) => {
     if (!normalized) return true;
     return (
       normalizeTipText(tip.title).includes(normalized.slice(0, 3)) ||
       normalizeTipText(tip.text).includes(normalized.slice(0, 3)) ||
-      (/三角锥|三棱锥|四面体|棱锥/.test(normalized) && /三棱锥|四棱锥/.test(tip.text))
+      (/三角锥|三棱锥|四面体|棱锥/.test(normalized) && /三棱锥|四棱锥/.test(tip.text)) ||
+      (/圆柱|圆锥|圆台|球|椭球|柱面|棱柱/.test(normalized) && /圆柱|圆锥|椭球|棱柱|坐标/.test(tip.text))
     );
   });
   const tips = [...(matched.length ? matched : templates)];

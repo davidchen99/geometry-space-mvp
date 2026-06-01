@@ -784,6 +784,7 @@ function buildTipsPrompt(problemText) {
 请根据用户当前输入，给出 3 到 5 条“整理原文”的表达建议。
 目标是让题目更容易被三维建模器稳定识别：只能改写、归并和规范化原文已经出现的图形类型、点名、长度、垂直/平行/中点/中心关系、需要连接的线段。
 不要凭空添加题目没有给出的点、长度、底面形状、高、垂直关系或连线。
+输出给学生看的题目必须像正常考试题，优先使用 O₁、A₁、√3、×、÷、⊥、∥ 这类常见数学符号，不要输出 \\(...\\)、sqrt(3) 或代码式表达。
 如果用户只输入了几个字，例如“三角锥”“四面体”“接个字”，不要补成完整题，应该在 meta 里写清缺少什么，text 只保留整理后的原输入。
 不要解题，不要讲步骤。
 只输出 JSON：
@@ -818,14 +819,19 @@ function buildLocalTips(problemText) {
   const tips = [];
   const templates = [
     {
+      title: "圆台侧面积体积",
+      meta: "正常考试题写法 + 根号",
+      text: "已知圆台O₁O，上底面圆心为O₁，半径r=1，下底面圆心为O，半径R=3。圆台的高O₁O=2√3，母线AB=4，其中A为上底面圆周上一点，B为下底面圆周上一点，且O₁A⊥O₁O，OB⊥O₁O，O₁A∥OB。求该圆台的侧面积和体积。",
+    },
+    {
       title: "正方体中点连线",
       meta: "图形 + 边长 + 中点 + 连接线",
-      text: "正方体ABCD-A1B1C1D1，边长为2，E是AB的中点，连接EC1。",
+      text: "正方体ABCD-A₁B₁C₁D₁，边长为2，E是AB的中点，连接EC₁。",
     },
     {
       title: "长方体比例尺寸",
       meta: "三向长度 + 特殊点 + 连线",
-      text: "长方体ABCD-A1B1C1D1，AB=3，BC=2，AA1=2，M是CC1的中点，连接AM。",
+      text: "长方体ABCD-A₁B₁C₁D₁，AB=3，BC=2，AA₁=2，M是CC₁的中点，连接AM。",
     },
     {
       title: "三棱锥垂直关系",
@@ -837,6 +843,36 @@ function buildLocalTips(problemText) {
       meta: "底面 + 中心 + 高",
       text: "四棱锥P-ABCD，底面ABCD是正方形，AB=2，O是AC和BD的交点，PO垂直于平面ABCD，PO=2，连接PA、PB、PC、PD。",
     },
+    {
+      title: "圆柱半径高度",
+      meta: "圆心 + 半径 + 高",
+      text: "圆柱，底面圆心O，上底圆心O₁，半径=2，高O₁O=4，连接OO₁。",
+    },
+    {
+      title: "圆锥底面和高",
+      meta: "底面半径 + 顶点高度",
+      text: "圆锥P-O，底面半径=2，高=3，连接PO。",
+    },
+    {
+      title: "椭球面三半轴",
+      meta: "二次曲面 + 半轴",
+      text: "椭球面，a=3，b=2，c=1.5。",
+    },
+    {
+      title: "直三棱柱",
+      meta: "底面边长 + 高",
+      text: "直三棱柱ABC-A₁B₁C₁，底面边长=2，高AA₁=3。",
+    },
+    {
+      title: "长方体截面圆",
+      meta: "组合图形 + 交线",
+      text: "长方体ABCD-A₁B₁C₁D₁，AB=6，BC=4，AA₁=4。一个圆柱垂直穿过长方体，圆柱轴线经过上下底面中心，半径=1.5，显示圆柱与长方体上下底面的交线。",
+    },
+    {
+      title: "显式坐标点",
+      meta: "按坐标准确放置",
+      text: "A(1,2,3)，B(4,2,3)，C(1,5,3)，连接AB、BC、CA。",
+    },
   ];
   const normalized = normalizeTipText(clean);
   const matched = templates.filter((tip) => {
@@ -844,7 +880,8 @@ function buildLocalTips(problemText) {
     return (
       normalizeTipText(tip.title).includes(normalized.slice(0, 3)) ||
       normalizeTipText(tip.text).includes(normalized.slice(0, 3)) ||
-      (/三角锥|三棱锥|四面体|棱锥/.test(normalized) && /三棱锥|四棱锥/.test(tip.text))
+      (/三角锥|三棱锥|四面体|棱锥/.test(normalized) && /三棱锥|四棱锥/.test(tip.text)) ||
+      (/圆柱|圆锥|圆台|球|椭球|柱面|棱柱/.test(normalized) && /圆柱|圆锥|椭球|棱柱|坐标/.test(tip.text))
     );
   });
   (matched.length ? matched : templates).forEach((item) => tips.push(item));
