@@ -1512,14 +1512,16 @@ async function completeProblemText() {
   dom.samplesPanel.hidden = true;
   setActiveStep("input");
   setMobilePanel("input");
+  hideReviewPanel();
   if (result.text) {
     dom.input.value = result.text;
-    updateProblemHints(dom.input.value);
+    updateProblemHints(dom.input.value, result.missing.length ? `还缺：${result.missing.join("、")}` : "");
     syncChoiceQuestion();
+  } else {
+    updateProblemHints("", "请先输入题目原文。");
   }
-  renderCompletionReview(result);
   dom.input.focus();
-  setStatus(result.missing.length ? "已整理原文，请补齐缺失项后再生成" : "已整理原文，确认后可生成");
+  setStatus(result.missing.length ? "已按原文整理，请补齐缺失项后再生成" : "已按原文整理，可直接生成");
   window.lucide?.createIcons();
 }
 
@@ -1566,22 +1568,6 @@ function organizeProblemText(rawText) {
     relations,
     missing,
   };
-}
-
-function renderCompletionReview(result) {
-  state.pendingReviewContext = { rawText: result.text, problemText: result.text, completion: true };
-  dom.reviewPanel.hidden = false;
-  dom.reviewState.textContent = result.missing.length ? "待补充" : "可确认";
-  dom.reviewContent.innerHTML = `
-    <div class="review-brief">已按原文整理，不新增题目没有给出的点、长度或关系。</div>
-    <div class="review-grid">
-      <span><strong>图形：</strong>${escapeHtml(result.shape)}</span>
-      <span><strong>点名：</strong>${escapeHtml(result.labels.length ? result.labels.join("、") : "未明确")}</span>
-      <span><strong>长度：</strong>${escapeHtml(result.lengths.length ? result.lengths.map(([key, value]) => `${key}=${formatNumber(value)}`).join("、") : "未明确")}</span>
-      <span><strong>关系：</strong>${escapeHtml(result.relations.length ? result.relations.join("、") : "未明确")}</span>
-    </div>
-    <div class="review-preview">${escapeHtml(result.missing.length ? `需要补充：${result.missing.join("、")}` : "信息基本完整，可以确认生成。")}</div>
-  `;
 }
 
 function buildLocalTips(text) {
@@ -1744,10 +1730,6 @@ async function generateModel(options = {}) {
   }
 
   updateProblemHints(historyText);
-  if (!options.skipReview && shouldReviewBeforeGenerate(context)) {
-    renderProblemReview(context);
-    return;
-  }
 
   if (context.optionKey && state.choiceCache[context.optionKey]?.model) {
     const cached = state.choiceCache[context.optionKey];

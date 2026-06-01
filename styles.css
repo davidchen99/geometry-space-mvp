@@ -194,7 +194,7 @@ button {
 
 .workspace {
   position: relative;
-  height: calc(100vh - var(--topbar-h));
+  height: 100%;
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
@@ -325,7 +325,7 @@ button {
 
 .primary-actions {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr);
   gap: 9px;
   margin-top: 12px;
 }
@@ -1518,6 +1518,7 @@ button {
 .contact-footer {
   min-height: 32px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 4px;
@@ -1597,7 +1598,7 @@ button {
   .app-shell {
     height: 100dvh;
     min-height: 100dvh;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
     overflow: hidden;
   }
 
@@ -1673,7 +1674,7 @@ button {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     min-height: 0;
-    height: calc(100dvh - var(--topbar-h));
+    height: 100%;
     overflow: hidden;
   }
 
@@ -1811,7 +1812,7 @@ button {
   }
 
   .primary-actions {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
   #selectAllBtn {
@@ -1898,7 +1899,10 @@ button {
   }
 
   .contact-footer {
-    display: none;
+    min-height: 38px;
+    padding: 5px 10px calc(5px + env(safe-area-inset-bottom));
+    font-size: 11px;
+    line-height: 1.35;
   }
 
   .mobile-tab {
@@ -1936,7 +1940,55 @@ button {
   .admin-dialog {
     inset: 0;
     width: 100vw;
+    height: 100dvh;
     border-radius: 0;
+  }
+
+  .auth-dialog {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    bottom: auto;
+    width: auto;
+    max-height: calc(100dvh - 20px);
+    transform: none;
+    overflow: auto;
+  }
+
+  .admin-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 12px;
+  }
+
+  .admin-header h2 {
+    font-size: 18px;
+  }
+
+  .admin-header p {
+    font-size: 12px;
+  }
+
+  .admin-login,
+  .admin-board {
+    padding: 12px;
+  }
+
+  .auth-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .admin-actions,
+  .admin-inline-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-actions > *,
+  .admin-inline-actions > * {
+    width: 100%;
   }
 
   .admin-grid {
