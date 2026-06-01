@@ -320,6 +320,7 @@ button {
 
 .primary-button,
 .secondary-button,
+.ghost-button,
 .sample-button,
 .tip-button {
   border-radius: 8px;
@@ -327,7 +328,8 @@ button {
 }
 
 .primary-button,
-.secondary-button {
+.secondary-button,
+.ghost-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -351,12 +353,24 @@ button {
   border: 1px solid var(--line);
 }
 
+.ghost-button {
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
 .secondary-button:hover,
+.ghost-button:hover,
 .sample-button:hover,
 .tip-button:hover,
 .element-item:hover,
 .tool-button:hover {
   border-color: var(--accent);
+}
+
+.ghost-button:hover {
+  color: var(--ink);
+  background: var(--surface-soft);
 }
 
 .secondary-button.compact {
@@ -1437,6 +1451,14 @@ button {
   gap: 8px;
 }
 
+.admin-inline-actions,
+.invite-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .copy-button {
   min-height: 28px;
   padding: 0 9px;
@@ -1451,6 +1473,15 @@ button {
 .copy-button:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+.copy-button.danger {
+  color: var(--danger);
+}
+
+.copy-button.danger:hover {
+  border-color: rgba(217, 86, 74, 0.5);
+  background: #fff2f0;
 }
 
 .contact-footer {

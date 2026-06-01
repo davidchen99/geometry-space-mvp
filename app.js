@@ -91,6 +91,7 @@ const dom = {
   appShell: document.querySelector("#appShell"),
   input: document.querySelector("#problemInput"),
   generateBtn: document.querySelector("#generateBtn"),
+  completeBtn: document.querySelector("#completeBtn"),
   tipsBtn: document.querySelector("#tipsBtn"),
   tipsPanel: document.querySelector("#tipsPanel"),
   tipsList: document.querySelector("#tipsList"),
@@ -177,6 +178,8 @@ const dom = {
   adminInviteMaxUses: document.querySelector("#adminInviteMaxUses"),
   adminInviteDailyLimit: document.querySelector("#adminInviteDailyLimit"),
   adminInviteMonthlyLimit: document.querySelector("#adminInviteMonthlyLimit"),
+  inviteSubmitBtn: document.querySelector("#inviteSubmitBtn"),
+  inviteCancelEditBtn: document.querySelector("#inviteCancelEditBtn"),
   inviteHint: document.querySelector("#inviteHint"),
   inviteList: document.querySelector("#inviteList"),
   userUsageList: document.querySelector("#userUsageList"),
@@ -241,6 +244,8 @@ const state = {
   pendingReviewContext: null,
   pendingAuthAction: null,
   pendingAuthMessage: "",
+  editingInviteId: "",
+  adminInvites: [],
   pointerDown: null,
   longPressTimer: null,
   longPressTriggered: false,
@@ -283,6 +288,7 @@ function initUI() {
   });
 
   dom.generateBtn.addEventListener("click", () => generateModel());
+  dom.completeBtn.addEventListener("click", completeProblemText);
   dom.tipsBtn.addEventListener("click", showInputTips);
   dom.clearBtn.addEventListener("click", () => {
     dom.input.value = "";
@@ -402,7 +408,8 @@ function initAdminUI() {
   dom.clearApiKeyBtn.addEventListener("click", clearApiKey);
   dom.passwordForm.addEventListener("submit", changeAdminPassword);
   dom.refreshStatsBtn.addEventListener("click", loadAdminDashboard);
-  dom.inviteForm.addEventListener("submit", createInvite);
+  dom.inviteForm.addEventListener("submit", saveInvite);
+  dom.inviteCancelEditBtn.addEventListener("click", resetInviteForm);
 }
 
 function handleStepNavigation(step) {
@@ -483,6 +490,7 @@ function setViewMode(mode, reset = true) {
 
 function inferViewModeFromText(text) {
   const clean = normalizeText(text || "");
+  if (/(正方体|长方体|三棱锥|三角锥|四面体|四棱锥|棱锥|棱柱|圆锥|圆柱|球)/.test(clean)) return "3d";
   if (/(圆|椭圆|抛物线|双曲线|轨迹|动点|三角形|△)/.test(clean)) return "2d";
   return "3d";
 }
@@ -1029,12 +1037,13 @@ async function changeAdminPassword(event) {
   }
 }
 
-async function createInvite(event) {
+async function saveInvite(event) {
   event.preventDefault();
-  dom.inviteHint.textContent = "正在创建...";
+  const editing = Boolean(state.editingInviteId);
+  dom.inviteHint.textContent = editing ? "正在保存..." : "正在创建...";
   try {
-    const data = await apiFetch("/api/admin/invites", {
-      method: "POST",
+    const data = await apiFetch(editing ? `/api/admin/invites/${encodeURIComponent(state.editingInviteId)}` : "/api/admin/invites", {
+      method: editing ? "PUT" : "POST",
       headers: adminHeaders(),
       body: {
         code: dom.adminInviteCode.value.trim(),
@@ -1043,15 +1052,26 @@ async function createInvite(event) {
         monthlyTokenLimit: Number(dom.adminInviteMonthlyLimit.value || 100000),
       },
     });
-    dom.adminInviteCode.value = "";
-    dom.inviteHint.textContent = `已创建：${data.invite.code}`;
+    resetInviteForm();
+    dom.inviteHint.textContent = editing ? `已保存：${data.invite.code}` : `已创建：${data.invite.code}`;
     await loadAdminDashboard();
   } catch (error) {
     dom.inviteHint.textContent = error.message;
   }
 }
 
+function resetInviteForm() {
+  state.editingInviteId = "";
+  dom.adminInviteCode.value = "";
+  dom.adminInviteMaxUses.value = 30;
+  dom.adminInviteDailyLimit.value = 20;
+  dom.adminInviteMonthlyLimit.value = 100000;
+  dom.inviteSubmitBtn.textContent = "创建邀请码";
+  dom.inviteCancelEditBtn.hidden = true;
+}
+
 function renderInvites(invites) {
+  state.adminInvites = invites;
   if (!invites.length) {
     dom.inviteList.innerHTML = '<div class="recent-item"><span>暂无邀请码</span></div>';
     return;
@@ -1063,7 +1083,11 @@ function renderInvites(invites) {
         <div class="recent-item invite-item">
           <div class="invite-row">
             <strong>${escapeHtml(item.code)}</strong>
-            <button class="copy-button" type="button" data-copy-invite="${escapeHtml(item.code)}">复制</button>
+            <div class="invite-actions">
+              <button class="copy-button" type="button" data-copy-invite="${escapeHtml(item.code)}">复制</button>
+              <button class="copy-button" type="button" data-edit-invite="${escapeHtml(item.id)}">编辑</button>
+              <button class="copy-button danger" type="button" data-delete-invite="${escapeHtml(item.id)}">删除</button>
+            </div>
           </div>
           <span>已用 ${item.usedCount || 0}/${item.maxUses || 0} · 每日 AI ${item.dailyAiLimit || 0} · 月 token ${item.monthlyTokenLimit || 0}</span>
         </div>
@@ -1073,6 +1097,44 @@ function renderInvites(invites) {
   dom.inviteList.querySelectorAll("[data-copy-invite]").forEach((button) => {
     button.addEventListener("click", () => copyInviteCode(button.dataset.copyInvite || ""));
   });
+  dom.inviteList.querySelectorAll("[data-edit-invite]").forEach((button) => {
+    button.addEventListener("click", () => editInvite(button.dataset.editInvite || ""));
+  });
+  dom.inviteList.querySelectorAll("[data-delete-invite]").forEach((button) => {
+    button.addEventListener("click", () => deleteInvite(button.dataset.deleteInvite || ""));
+  });
+}
+
+function editInvite(id) {
+  const invite = state.adminInvites.find((item) => item.id === id);
+  if (!invite) return;
+  state.editingInviteId = id;
+  dom.adminInviteCode.value = invite.code || "";
+  dom.adminInviteMaxUses.value = invite.maxUses || 30;
+  dom.adminInviteDailyLimit.value = invite.dailyAiLimit || 20;
+  dom.adminInviteMonthlyLimit.value = invite.monthlyTokenLimit || 100000;
+  dom.inviteSubmitBtn.textContent = "保存邀请码";
+  dom.inviteCancelEditBtn.hidden = false;
+  dom.inviteHint.textContent = `正在编辑：${invite.code}`;
+  dom.adminInviteCode.focus();
+}
+
+async function deleteInvite(id) {
+  const invite = state.adminInvites.find((item) => item.id === id);
+  if (!invite) return;
+  if (!window.confirm(`确定删除邀请码 ${invite.code}？已登记用户不会被删除。`)) return;
+  dom.inviteHint.textContent = "正在删除...";
+  try {
+    await apiFetch(`/api/admin/invites/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: adminHeaders(),
+    });
+    if (state.editingInviteId === id) resetInviteForm();
+    dom.inviteHint.textContent = `已删除：${invite.code}`;
+    await loadAdminDashboard();
+  } catch (error) {
+    dom.inviteHint.textContent = error.message;
+  }
 }
 
 async function copyInviteCode(code) {
@@ -1141,7 +1203,7 @@ function analyzeProblemText(text) {
   const hints = [];
   if (!clean) return hints;
 
-  const hasSupportedType = /(正方体|长方体|三棱锥|四棱锥|正四棱锥|三角形|△)/.test(clean);
+  const hasSupportedType = /(正方体|长方体|三棱锥|三角锥|四面体|四棱锥|正四棱锥|棱锥|三角形|△)/.test(clean);
   const hasCurveType = /(圆|椭圆|抛物线|双曲线|轨迹|动点)/.test(clean);
   const hasRoundSolidType = /(球|圆锥|圆柱)/.test(clean);
 
@@ -1154,7 +1216,7 @@ function analyzeProblemText(text) {
   }
 
   if (!hasSupportedType && !hasCurveType && !hasRoundSolidType) {
-    hints.push({ level: "warn", text: "题目里最好先写清图形类型，例如正方体、长方体、三棱锥或三角形。" });
+    hints.push({ level: "warn", text: "题目里最好先写清图形类型，例如正方体、长方体、三棱锥、三角锥或三角形。" });
   }
 
   const labels = clean.match(/[A-Z][0-9]?/g) || [];
@@ -1403,7 +1465,6 @@ function summarizeCurrentModel() {
 }
 
 async function showInputTips() {
-  if (!requireUser("Tips 会调用 AI 或记录用量，请先登记手机号。", showInputTips)) return;
   const text = dom.input.value.trim();
   dom.tipsPanel.hidden = false;
   setActiveStep("input");
@@ -1425,24 +1486,73 @@ async function showInputTips() {
   }
 }
 
+async function completeProblemText() {
+  const text = dom.input.value.trim();
+  dom.tipsPanel.hidden = false;
+  setActiveStep("input");
+  setMobilePanel("input");
+  renderTips(buildLocalTips(text), "可选版本");
+  dom.tipsState.textContent = "正在完善";
+  setStatus("正在帮你补全题目信息...");
+
+  try {
+    const data = await requestBackendTips(text);
+    const tips = Array.isArray(data.tips) && data.tips.length ? data.tips : buildLocalTips(text);
+    const completed = chooseCompletionTip(tips, text);
+    renderTips(tips, data.source === "ai" ? "AI 已完善" : "本地完善");
+    if (completed?.text) {
+      dom.input.value = completed.text;
+      dom.input.focus();
+      updateProblemHints(dom.input.value);
+      syncChoiceQuestion();
+      hideReviewPanel();
+      setStatus("题目信息已补全，请检查修改后再生成");
+    } else {
+      setStatus("没有找到可用的补全文本");
+    }
+  } catch (error) {
+    const tips = buildLocalTips(text);
+    const completed = chooseCompletionTip(tips, text);
+    renderTips(tips, "本地完善");
+    if (completed?.text) {
+      dom.input.value = completed.text;
+      updateProblemHints(dom.input.value);
+      syncChoiceQuestion();
+    }
+    setStatus(`已给出本地补全：${error.message}`);
+  } finally {
+    window.lucide?.createIcons();
+  }
+}
+
+function chooseCompletionTip(tips, originalText) {
+  const original = normalizeText(originalText || "");
+  return (tips || []).find((tip) => normalizeText(tip.text || "").length > original.length + 4) || tips?.[0] || null;
+}
+
 function buildLocalTips(text) {
   const clean = String(text || "").trim();
   const tips = [];
 
-  if (clean) {
+  const matched = starterTips.filter((tip) => {
+    if (!clean) return true;
+    const normalized = normalizeText(clean);
+    return (
+      normalizeText(tip.title).includes(normalized.slice(0, 3)) ||
+      normalizeText(tip.text).includes(normalized.slice(0, 3)) ||
+      (/三角锥|三棱锥|四面体|棱锥/.test(normalized) && /三棱锥|四棱锥/.test(tip.text))
+    );
+  });
+  const pool = matched.length ? matched : starterTips;
+  pool.forEach((tip) => tips.push(tip));
+
+  if (clean && normalizeText(clean).length >= 12) {
     tips.push({
       title: "整理当前题目",
       meta: "补齐图形、长度、关系、连线",
       text: clean.endsWith("。") || clean.endsWith(".") ? clean : `${clean}。`,
     });
   }
-
-  const matched = starterTips.filter((tip) => {
-    if (!clean) return true;
-    return clean.includes(tip.title.slice(0, 3)) || tip.text.includes(clean.slice(0, 3));
-  });
-  const pool = matched.length ? matched : starterTips;
-  pool.forEach((tip) => tips.push(tip));
 
   return tips.slice(0, 5);
 }
@@ -1690,7 +1800,7 @@ function buildUnderstandingSummary(context) {
   const labels = Array.from(new Set(clean.match(/[A-Z][0-9]?/g) || [])).slice(0, 10);
   const lengths = Array.from(parseLengthMap(clean).entries()).slice(0, 6);
   const shape =
-    clean.match(/正方体|长方体|三棱锥|四棱锥|正四棱锥|三角形|圆|椭圆|双曲线|抛物线|直线|轨迹/)?.[0] || "待判断";
+    clean.match(/正方体|长方体|三棱锥|三角锥|四面体|四棱锥|正四棱锥|棱锥|三角形|圆|椭圆|双曲线|抛物线|直线|轨迹/)?.[0] || "待判断";
   const relations = [];
   if (/垂直|⊥/.test(clean)) relations.push("垂直");
   if (/平行|\/\//.test(clean)) relations.push("平行");
@@ -1737,10 +1847,12 @@ function buildModelFromText(rawText) {
     model = createCubeModel(text);
   } else if (/长方体/.test(text)) {
     model = createCuboidModel(text);
-  } else if (/三棱锥/.test(text)) {
+  } else if (/三棱锥|三角锥|四面体|正三棱锥/.test(text)) {
     model = createTriPyramidModel(text);
   } else if (/四棱锥|正四棱锥/.test(text)) {
     model = createSquarePyramidModel(text);
+  } else if (/棱锥/.test(text)) {
+    model = createGenericPyramidModel(text);
   } else if (/三角形|△/.test(text)) {
     model = createTriangleModel(text);
   } else if (/(椭圆|双曲线|抛物线|圆|直线|方程|轨迹|动点)/.test(text) && !/(圆柱|圆锥|球)/.test(text)) {
@@ -1837,21 +1949,35 @@ function createCuboidModel(text) {
   return model;
 }
 
-function createTriPyramidModel(text) {
-  const nameMatch = text.match(/三棱锥([A-Z][0-9]?)-([A-Z][0-9]?)([A-Z][0-9]?)([A-Z][0-9]?)/);
-  const apex = nameMatch?.[1] || "P";
-  const base = nameMatch ? [nameMatch[2], nameMatch[3], nameMatch[4]] : ["A", "B", "C"];
-  const [a, b, c] = base;
-  const lengths = parseLengthMap(text);
-  const height = getLength(lengths, [`${apex}${a}`, `${a}${apex}`], 1.4);
-  const ab = getLength(lengths, [`${a}${b}`, `${b}${a}`], 1.6);
-  const bc = getLength(lengths, [`${b}${c}`, `${c}${b}`], 1.6);
+function createGenericPyramidModel(text) {
+  const parsed = parsePyramidNotation(text);
+  if (parsed?.base.length === 3) return createTriPyramidModel(text);
+  if (parsed?.base.length === 4) return createSquarePyramidModel(text);
+  throw new Error("请写清棱锥的顶点和底面点，例如 P-ABC 或 P-ABCD。");
+}
 
-  const model = createBaseModel("tri-pyramid", "三棱锥模型", `${apex}${a} 垂直底面时，${apex} 点位于 ${a} 点正上方。`);
-  addPoint(model, a, 0, 0, 0, "底面顶点");
-  addPoint(model, b, ab, 0, 0, "底面顶点");
-  addPoint(model, c, ab, bc, 0, "底面顶点");
-  addPoint(model, apex, 0, 0, height, "顶点");
+function createTriPyramidModel(text) {
+  const parsed = parsePyramidNotation(text, 3) || { apex: "P", base: ["A", "B", "C"], kind: "三棱锥" };
+  const apex = parsed.apex;
+  const [a, b, c] = parsed.base;
+  const lengths = parseLengthMap(text);
+  const baseData = buildTriangleBaseData(text, [a, b, c], lengths);
+  const model = createBaseModel(
+    "tri-pyramid",
+    /四面体/.test(text) ? "四面体模型" : "三棱锥模型",
+    `${apex}-${a}${b}${c} 已按底面 z=0 建系，顶点 ${apex} 放在底面上方。`,
+  );
+
+  addPoint(model, a, baseData.positions[a].x, baseData.positions[a].y, 0, "底面顶点");
+  addPoint(model, b, baseData.positions[b].x, baseData.positions[b].y, 0, "底面顶点");
+  addPoint(model, c, baseData.positions[c].x, baseData.positions[c].y, 0, "底面顶点");
+
+  const foot = findLinePlaneFoot(text, apex, [a, b, c]) || (/(正三棱锥|正三角锥|底面中心|重心|中心|高)/.test(text) ? "O" : "");
+  const footLabel = foot || "O";
+  const footPosition = foot ? ensureBaseFootPoint(model, foot, [a, b, c]) : averagePointPosition(model, [a, b, c]);
+  const defaultHeight = Math.max(1.1, Math.max(baseData.ab, baseData.bc, baseData.ac) * 0.85);
+  const height = getLength(lengths, [`${apex}${footLabel}`, `${footLabel}${apex}`], parseNamedNumber(text, ["高", "高度"], defaultHeight));
+  addPoint(model, apex, footPosition.x, footPosition.y, Math.max(height, 0.6), "顶点");
 
   addSegment(model, a, b, "edge", "底边");
   addSegment(model, b, c, "edge", "底边");
@@ -1859,33 +1985,41 @@ function createTriPyramidModel(text) {
   addSegment(model, apex, a, "edge", "侧棱");
   addSegment(model, apex, b, "edge", "侧棱");
   addSegment(model, apex, c, "edge", "侧棱");
+  if (foot && model.points[foot]) addSegment(model, apex, foot, "aux", "高");
   addFace(model, `平面${a}${b}${c}`, [a, b, c]);
   addFace(model, `平面${apex}${a}${b}`, [apex, a, b]);
   addFace(model, `平面${apex}${b}${c}`, [apex, b, c]);
   addFace(model, `平面${apex}${c}${a}`, [apex, c, a]);
-  addRelation(model, `${apex}${a} ⟂ 平面${a}${b}${c}`);
+  if (baseData.rightAtB) addRelation(model, `${a}${b} ⟂ ${b}${c}`);
+  if (/(正三棱锥|正三角锥|等边三角形|正三角形)/.test(text)) addRelation(model, `底面${a}${b}${c} 为等边三角形`);
+  addRelation(model, foot ? `${apex}${foot} ⟂ 平面${a}${b}${c}` : `${apex} 位于底面${a}${b}${c}上方`);
   return model;
 }
 
 function createSquarePyramidModel(text) {
-  const nameMatch = text.match(/(?:正)?四棱锥([A-Z][0-9]?)-([A-Z][0-9]?)([A-Z][0-9]?)([A-Z][0-9]?)([A-Z][0-9]?)/);
-  const apex = nameMatch?.[1] || "P";
-  const base = nameMatch ? [nameMatch[2], nameMatch[3], nameMatch[4], nameMatch[5]] : ["A", "B", "C", "D"];
-  const [a, b, c, d] = base;
+  const parsed = parsePyramidNotation(text, 4) || { apex: "P", base: ["A", "B", "C", "D"], kind: "四棱锥" };
+  const apex = parsed.apex;
+  const [a, b, c, d] = parsed.base;
   const lengths = parseLengthMap(text);
-  const side = getLength(lengths, [`${a}${b}`, `${b}${a}`, `${b}${c}`, `${c}${b}`], parseGlobalLength(text, 2));
-  const height = getLength(lengths, [`${apex}O`, `O${apex}`], side);
-  const half = side / 2;
-  const model = createBaseModel("square-pyramid", "四棱锥模型", `底面为正方形，${apex} 点位于底面中心正上方。`);
+  const width = getLength(lengths, [`${a}${b}`, `${b}${a}`, `${c}${d}`, `${d}${c}`], parseGlobalLength(text, 2));
+  const depth = getLength(lengths, [`${b}${c}`, `${c}${b}`, `${a}${d}`, `${d}${a}`], /正四棱锥|正方形/.test(text) ? width : width);
+  const halfWidth = width / 2;
+  const halfDepth = depth / 2;
+  const model = createBaseModel("square-pyramid", "四棱锥模型", `${apex}-${a}${b}${c}${d} 已按底面 z=0 建系，顶点 ${apex} 放在底面上方。`);
 
-  addPoint(model, a, -half, -half, 0, "底面顶点");
-  addPoint(model, b, half, -half, 0, "底面顶点");
-  addPoint(model, c, half, half, 0, "底面顶点");
-  addPoint(model, d, -half, half, 0, "底面顶点");
+  addPoint(model, a, -halfWidth, -halfDepth, 0, "底面顶点");
+  addPoint(model, b, halfWidth, -halfDepth, 0, "底面顶点");
+  addPoint(model, c, halfWidth, halfDepth, 0, "底面顶点");
+  addPoint(model, d, -halfWidth, halfDepth, 0, "底面顶点");
   if (/O/.test(text) || new RegExp(`${apex}O|O${apex}`).test(text)) {
     addPoint(model, "O", 0, 0, 0, "底面中心");
   }
-  addPoint(model, apex, 0, 0, height, "顶点");
+
+  const foot = findLinePlaneFoot(text, apex, [a, b, c, d]) || (model.points.O ? "O" : "");
+  const footLabel = foot || "O";
+  const footPosition = foot ? ensureBaseFootPoint(model, foot, [a, b, c, d]) : averagePointPosition(model, [a, b, c, d]);
+  const height = getLength(lengths, [`${apex}${footLabel}`, `${footLabel}${apex}`], parseNamedNumber(text, ["高", "高度"], Math.max(width, depth)));
+  addPoint(model, apex, footPosition.x, footPosition.y, Math.max(height, 0.6), "顶点");
 
   addSegment(model, a, b, "edge", "底边");
   addSegment(model, b, c, "edge", "底边");
@@ -1895,8 +2029,8 @@ function createSquarePyramidModel(text) {
   addSegment(model, apex, b, "edge", "侧棱");
   addSegment(model, apex, c, "edge", "侧棱");
   addSegment(model, apex, d, "edge", "侧棱");
+  if (foot && model.points[foot]) addSegment(model, apex, foot, "aux", "高");
   if (model.points.O) {
-    addSegment(model, apex, "O", "aux", "高");
     addSegment(model, a, c, "aux", "底面对角线");
     addSegment(model, b, d, "aux", "底面对角线");
   }
@@ -1905,9 +2039,95 @@ function createSquarePyramidModel(text) {
   addFace(model, `平面${apex}${b}${c}`, [apex, b, c]);
   addFace(model, `平面${apex}${c}${d}`, [apex, c, d]);
   addFace(model, `平面${apex}${d}${a}`, [apex, d, a]);
-  addRelation(model, `底面${a}${b}${c}${d} 为正方形`);
-  addRelation(model, `${apex}O ⟂ 平面${a}${b}${c}${d}`);
+  addRelation(model, /正四棱锥|正方形/.test(text) ? `底面${a}${b}${c}${d} 为正方形` : `底面${a}${b}${c}${d} 位于 z=0`);
+  addRelation(model, foot ? `${apex}${foot} ⟂ 平面${a}${b}${c}${d}` : `${apex} 位于底面${a}${b}${c}${d}上方`);
   return model;
+}
+
+function parsePyramidNotation(text, baseCount = 0) {
+  const expected = baseCount ? [baseCount] : [4, 3];
+  for (const count of expected) {
+    const typed = text.match(new RegExp(`(?:正?${count === 3 ? "三" : "四"}棱锥|${count === 3 ? "三角锥|正三角锥" : "正四棱锥"})([A-Z][0-9]?)[-－—]?((?:[A-Z][0-9]?){${count}})`));
+    if (typed) return { apex: typed[1], base: splitPointLabels(typed[2]).slice(0, count), kind: count === 3 ? "三棱锥" : "四棱锥" };
+    const generic = text.match(new RegExp(`棱锥([A-Z][0-9]?)[-－—]?((?:[A-Z][0-9]?){${count}})`));
+    if (generic) return { apex: generic[1], base: splitPointLabels(generic[2]).slice(0, count), kind: "棱锥" };
+  }
+
+  const tetra = text.match(/四面体((?:[A-Z][0-9]?){4})/);
+  if (tetra && (!baseCount || baseCount === 3)) {
+    const labels = splitPointLabels(tetra[1]).slice(0, 4);
+    return { apex: labels[0], base: labels.slice(1), kind: "四面体" };
+  }
+  return null;
+}
+
+function splitPointLabels(value) {
+  return String(value || "").match(/[A-Z][0-9]?/g) || [];
+}
+
+function buildTriangleBaseData(text, labels, lengths) {
+  const [a, b, c] = labels;
+  const side = parseGlobalLength(text, 1.8);
+  const ab = getLength(lengths, [`${a}${b}`, `${b}${a}`], side);
+  const bc = getLength(lengths, [`${b}${c}`, `${c}${b}`], /等边三角形|正三角形|正三棱锥|正三角锥/.test(text) ? ab : side);
+  const ac = getLength(lengths, [`${a}${c}`, `${c}${a}`], /等边三角形|正三角形|正三棱锥|正三角锥/.test(text) ? ab : Math.max(ab, bc));
+  const rightAtB = hasPerpendicularRelation(text, `${a}${b}`, `${b}${c}`);
+  const positions = {
+    [a]: { x: 0, y: 0 },
+    [b]: { x: ab, y: 0 },
+  };
+
+  if (rightAtB) {
+    positions[c] = { x: ab, y: bc };
+  } else {
+    const safeAb = Math.max(ab, 0.4);
+    let cx = (ac * ac + safeAb * safeAb - bc * bc) / (2 * safeAb);
+    let cy = Math.sqrt(Math.max(ac * ac - cx * cx, 0.36));
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) {
+      cx = safeAb / 2;
+      cy = Math.max(bc, ac, safeAb) * 0.8;
+    }
+    positions[c] = { x: cx, y: cy };
+  }
+  return { positions, ab, bc, ac, rightAtB };
+}
+
+function hasPerpendicularRelation(text, first, second) {
+  const a = first.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const b = second.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`${a}(?:垂直于?|⊥)${b}|${b}(?:垂直于?|⊥)${a}`).test(text);
+}
+
+function findLinePlaneFoot(text, apex, baseLabels) {
+  const linePlaneRegex = /([A-Z][0-9]?[A-Z][0-9]?)(?:垂直于?|⊥)平面([A-Z0-9]+)/g;
+  for (const match of text.matchAll(linePlaneRegex)) {
+    const endpoints = parseSegmentEndpoints(match[1]);
+    if (!endpoints || !endpoints.includes(apex)) continue;
+    const planeLabels = splitPointLabels(match[2]);
+    if (baseLabels.some((label) => !planeLabels.includes(label))) continue;
+    return endpoints.find((label) => label !== apex) || "";
+  }
+  return "";
+}
+
+function ensureBaseFootPoint(model, foot, baseLabels) {
+  if (model.points[foot]) return model.points[foot].position;
+  const center = averagePointPosition(model, baseLabels);
+  addPoint(model, foot, center.x, center.y, center.z, "底面垂足");
+  return model.points[foot].position;
+}
+
+function averagePointPosition(model, labels) {
+  const points = labels.map((label) => model.points[label]?.position).filter(Boolean);
+  const count = Math.max(points.length, 1);
+  return points.reduce(
+    (sum, point) => ({
+      x: sum.x + point.x / count,
+      y: sum.y + point.y / count,
+      z: sum.z + point.z / count,
+    }),
+    { x: 0, y: 0, z: 0 },
+  );
 }
 
 function createTriangleModel(text) {
@@ -2946,7 +3166,7 @@ function exportScreenshot() {
 
 function showParseError(error) {
   dom.title.textContent = "解析失败";
-  dom.summary.textContent = `${error.message} 当前 MVP 优先支持常见正方体、长方体、三棱锥、四棱锥和三角形。`;
+  dom.summary.textContent = `${error.message} 当前 MVP 优先支持常见正方体、长方体、三棱锥、三角锥、四面体、四棱锥和三角形。`;
   dom.relationList.innerHTML = "";
   dom.equationList.innerHTML = "";
   updateProblemHints(dom.input.value, error.message);

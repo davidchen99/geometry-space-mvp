@@ -63,6 +63,9 @@
               <button class="icon-button ghost" id="clearBtn" type="button" aria-label="清空题目" title="清空题目">
                 <i data-lucide="trash-2"></i>
               </button>
+              <button class="icon-button ghost" id="completeBtn" type="button" aria-label="帮我完善题目信息" title="帮我完善题目信息">
+                <i data-lucide="sparkles"></i>
+              </button>
             </div>
 
             <textarea
@@ -461,7 +464,10 @@
                   <span>每月 token 上限</span>
                   <input id="adminInviteMonthlyLimit" type="number" min="1000" value="100000" />
                 </label>
-                <button class="secondary-button" type="submit">创建邀请码</button>
+                <div class="admin-inline-actions">
+                  <button class="secondary-button" id="inviteSubmitBtn" type="submit">创建邀请码</button>
+                  <button class="ghost-button" id="inviteCancelEditBtn" type="button" hidden>取消编辑</button>
+                </div>
                 <p class="admin-hint" id="inviteHint">邀请码用于学生登记。</p>
                 <div class="admin-recent" id="inviteList"></div>
               </form>

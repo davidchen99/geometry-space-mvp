@@ -528,6 +528,36 @@ async function handleApi(req, res, pathname) {
       return json(res, 200, { ok: true, invite });
     }
 
+    const invitePathMatch = pathname.match(/^\/api\/admin\/invites\/([^/]+)$/);
+    if (invitePathMatch && req.method === "PUT") {
+      const body = await readBody(req);
+      const state = readState();
+      const id = decodeURIComponent(invitePathMatch[1]);
+      const invite = state.invites.find((item) => item.id === id);
+      if (!invite) return json(res, 404, { ok: false, error: "邀请码不存在" });
+      const code = String(body.code || invite.code || "").trim().toUpperCase();
+      if (!code) return json(res, 400, { ok: false, error: "邀请码不能为空" });
+      if (state.invites.some((item) => item.id !== id && item.code === code)) return json(res, 400, { ok: false, error: "邀请码已存在" });
+      const minUses = Math.max(1, Number(invite.usedCount || 0));
+      invite.code = code;
+      invite.maxUses = clampInteger(body.maxUses, minUses, 100000, Math.max(invite.maxUses || 30, minUses));
+      invite.plan = String(body.plan || invite.plan || "trial");
+      invite.dailyAiLimit = clampInteger(body.dailyAiLimit, 1, 100000, invite.dailyAiLimit || 20);
+      invite.monthlyTokenLimit = clampInteger(body.monthlyTokenLimit, 1000, 100000000, invite.monthlyTokenLimit || 100000);
+      writeState(state);
+      return json(res, 200, { ok: true, invite });
+    }
+
+    if (invitePathMatch && req.method === "DELETE") {
+      const state = readState();
+      const id = decodeURIComponent(invitePathMatch[1]);
+      const before = state.invites.length;
+      state.invites = state.invites.filter((item) => item.id !== id);
+      if (state.invites.length === before) return json(res, 404, { ok: false, error: "邀请码不存在" });
+      writeState(state);
+      return json(res, 200, { ok: true });
+    }
+
     if (req.method === "GET" && pathname === "/api/admin/users") {
       const state = readState();
       const daily = getDaily(state.stats);
@@ -753,6 +783,7 @@ function buildTipsPrompt(problemText) {
   return `你是一个中学几何三维建模输入助手。
 请根据用户当前输入，给出 3 到 5 条可以直接点击使用的题目表达建议。
 目标是让题目更容易被三维建模器稳定识别：必须优先补齐图形类型、点名、长度、垂直/平行/中点/中心关系、需要连接的线段。
+如果用户只输入了几个字，例如“三角锥”“四面体”“接个字”，请保留可能意图，补成常见高中几何题的完整表达，让用户可以再编辑检查。
 不要解题，不要讲步骤。
 只输出 JSON：
 {
@@ -784,16 +815,7 @@ function normalizeTips(input) {
 function buildLocalTips(problemText) {
   const clean = String(problemText || "").trim();
   const tips = [];
-
-  if (clean) {
-    tips.push({
-      title: "整理当前题目",
-      meta: "补齐图形、长度、关系、连线",
-      text: clean.endsWith("。") || clean.endsWith(".") ? clean : `${clean}。`,
-    });
-  }
-
-  [
+  const templates = [
     {
       title: "正方体中点连线",
       meta: "图形 + 边长 + 中点 + 连接线",
@@ -814,9 +836,31 @@ function buildLocalTips(problemText) {
       meta: "底面 + 中心 + 高",
       text: "四棱锥P-ABCD，底面ABCD是正方形，AB=2，O是AC和BD的交点，PO垂直于平面ABCD，PO=2，连接PA、PB、PC、PD。",
     },
-  ].forEach((item) => tips.push(item));
+  ];
+  const normalized = normalizeTipText(clean);
+  const matched = templates.filter((tip) => {
+    if (!normalized) return true;
+    return (
+      normalizeTipText(tip.title).includes(normalized.slice(0, 3)) ||
+      normalizeTipText(tip.text).includes(normalized.slice(0, 3)) ||
+      (/三角锥|三棱锥|四面体|棱锥/.test(normalized) && /三棱锥|四棱锥/.test(tip.text))
+    );
+  });
+  (matched.length ? matched : templates).forEach((item) => tips.push(item));
+
+  if (clean && normalized.length >= 12) {
+    tips.push({
+      title: "整理当前题目",
+      meta: "补齐图形、长度、关系、连线",
+      text: clean.endsWith("。") || clean.endsWith(".") ? clean : `${clean}。`,
+    });
+  }
 
   return dedupeTips(tips).slice(0, 5);
+}
+
+function normalizeTipText(text) {
+  return String(text || "").replace(/\s+/g, "").trim();
 }
 
 function dedupeTips(tips) {

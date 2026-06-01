@@ -47,6 +47,9 @@ async function handleApi(request, env, pathname) {
   if (pathname === "/api/admin/stats" && request.method === "GET") return adminStats(env);
   if (pathname === "/api/admin/invites" && request.method === "GET") return listInvites(env);
   if (pathname === "/api/admin/invites" && request.method === "POST") return createInvite(request, env);
+  const inviteRoute = pathname.match(/^\/api\/admin\/invites\/([^/]+)$/);
+  if (inviteRoute && request.method === "PUT") return updateInvite(request, env, decodeURIComponent(inviteRoute[1]));
+  if (inviteRoute && request.method === "DELETE") return deleteInvite(env, decodeURIComponent(inviteRoute[1]));
   if (pathname === "/api/admin/users" && request.method === "GET") return listUsers(env);
   if (pathname === "/api/admin/password" && request.method === "PUT") return changeAdminPassword(request, env);
   if (pathname === "/api/admin/logout" && request.method === "POST") return json({ ok: true });
@@ -218,6 +221,8 @@ async function listInvites(env) {
 async function createInvite(request, env) {
   const body = await readBody(request);
   const code = String(body.code || "").trim().toUpperCase() || `GEO-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
+  const existing = await env.DB.prepare("SELECT id FROM invites WHERE code = ?").bind(code).first();
+  if (existing) return json({ ok: false, error: "邀请码已存在" }, 400);
   const invite = {
     id: crypto.randomUUID(),
     code,
@@ -234,6 +239,38 @@ async function createInvite(request, env) {
     .bind(invite.id, invite.code, invite.maxUses, 0, invite.plan, invite.dailyAiLimit, invite.monthlyTokenLimit, invite.createdAt)
     .run();
   return json({ ok: true, invite });
+}
+
+async function updateInvite(request, env, id) {
+  const body = await readBody(request);
+  const row = await env.DB.prepare("SELECT * FROM invites WHERE id = ?").bind(id).first();
+  if (!row) return json({ ok: false, error: "邀请码不存在" }, 404);
+  const code = String(body.code || row.code || "").trim().toUpperCase();
+  if (!code) return json({ ok: false, error: "邀请码不能为空" }, 400);
+  const duplicated = await env.DB.prepare("SELECT id FROM invites WHERE code = ? AND id != ?").bind(code, id).first();
+  if (duplicated) return json({ ok: false, error: "邀请码已存在" }, 400);
+  const minUses = Math.max(1, Number(row.used_count || 0));
+  const invite = {
+    id,
+    code,
+    maxUses: clamp(body.maxUses, minUses, 100000, Math.max(row.max_uses || 30, minUses)),
+    usedCount: row.used_count || 0,
+    plan: String(body.plan || row.plan || "trial"),
+    dailyAiLimit: clamp(body.dailyAiLimit, 1, 100000, row.daily_ai_limit || 20),
+    monthlyTokenLimit: clamp(body.monthlyTokenLimit, 1000, 100000000, row.monthly_token_limit || 100000),
+    createdAt: row.created_at,
+  };
+  await env.DB.prepare("UPDATE invites SET code = ?, max_uses = ?, plan = ?, daily_ai_limit = ?, monthly_token_limit = ? WHERE id = ?")
+    .bind(invite.code, invite.maxUses, invite.plan, invite.dailyAiLimit, invite.monthlyTokenLimit, id)
+    .run();
+  return json({ ok: true, invite });
+}
+
+async function deleteInvite(env, id) {
+  const row = await env.DB.prepare("SELECT code FROM invites WHERE id = ?").bind(id).first();
+  if (!row) return json({ ok: false, error: "邀请码不存在" }, 404);
+  await env.DB.prepare("DELETE FROM invites WHERE id = ?").bind(id).run();
+  return json({ ok: true });
 }
 
 async function listUsers(env) {
@@ -394,15 +431,35 @@ function normalizeAiModel(input) {
 }
 
 function buildTipsPrompt(text) {
-  return `给出 3 到 5 条几何建模题目输入建议，只输出 JSON：{"tips":[{"title":"短标题","meta":"补齐内容","text":"完整题目"}]}。当前输入：${text || "空"}`;
+  return `你是中学几何三维建模输入助手。根据当前输入给出 3 到 5 条可直接点击使用的完整题目表达，优先补齐图形类型、点名、长度、垂直/平行/中点/中心关系和连线。如果用户只输入“三角锥”“四面体”等几个字，也要补成常见高中立体几何题。不要解题，只输出 JSON：{"tips":[{"title":"短标题","meta":"补齐内容","text":"完整题目"}]}。当前输入：${text || "空"}`;
 }
 
 function buildLocalTips(text) {
-  return [
+  const clean = String(text || "").trim();
+  const normalized = normalizeTipText(clean);
+  const templates = [
     { title: "正方体", meta: "中点 + 连线", text: "正方体ABCD-A1B1C1D1，边长为2，E是AB的中点，连接EC1。" },
     { title: "三角形", meta: "平面图形", text: "三角形ABC中，AB=3，BC=4，AC=5，D是AB的中点，连接CD。" },
     { title: "三棱锥", meta: "线面垂直", text: "三棱锥P-ABC，PA垂直于平面ABC，AB垂直于BC，PA=AB=BC=1，连接PB、PC。" },
+    { title: "四棱锥", meta: "底面中心 + 高", text: "四棱锥P-ABCD，底面ABCD是正方形，AB=2，O是AC和BD的交点，PO垂直于平面ABCD，PO=2，连接PA、PB、PC、PD。" },
   ];
+  const matched = templates.filter((tip) => {
+    if (!normalized) return true;
+    return (
+      normalizeTipText(tip.title).includes(normalized.slice(0, 3)) ||
+      normalizeTipText(tip.text).includes(normalized.slice(0, 3)) ||
+      (/三角锥|三棱锥|四面体|棱锥/.test(normalized) && /三棱锥|四棱锥/.test(tip.text))
+    );
+  });
+  const tips = [...(matched.length ? matched : templates)];
+  if (clean && normalized.length >= 12) {
+    tips.push({ title: "整理当前题目", meta: "补齐图形、长度、关系、连线", text: clean.endsWith("。") || clean.endsWith(".") ? clean : `${clean}。` });
+  }
+  return tips.slice(0, 5);
+}
+
+function normalizeTipText(text) {
+  return String(text || "").replace(/\s+/g, "").trim();
 }
 
 function normalizeTips(input) {
