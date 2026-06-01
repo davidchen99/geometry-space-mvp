@@ -66,6 +66,15 @@
               <button class="icon-button ghost" id="completeBtn" type="button" aria-label="帮我完善题目信息" title="帮我完善题目信息">
                 <i data-lucide="sparkles"></i>
               </button>
+              <button class="icon-button ghost" id="tipsBtn" type="button" aria-label="输入示例" title="输入示例">
+                <i data-lucide="lightbulb"></i>
+              </button>
+              <button class="icon-button ghost" id="samplesBtn" type="button" aria-label="示例题目" title="示例题目">
+                <i data-lucide="book-open"></i>
+              </button>
+              <button class="icon-button ghost" id="selectAllBtn" type="button" aria-label="全选题目" title="全选题目">
+                <i data-lucide="text-select"></i>
+              </button>
             </div>
 
             <textarea
@@ -78,13 +87,6 @@
               <button class="primary-button" id="generateBtn" type="button" data-help="核心按钮：把题目转成三维模型。">
                 <i data-lucide="wand-sparkles"></i>
                 生成图形
-              </button>
-              <button class="secondary-button" id="tipsBtn" type="button" data-help="题目不会写时点这里，选择一条规范表达。">
-                <i data-lucide="lightbulb"></i>
-                Tips
-              </button>
-              <button class="secondary-button compact" id="selectAllBtn" type="button">
-                全选
               </button>
             </div>
             <div class="problem-hints" id="problemHints" hidden></div>
@@ -121,7 +123,7 @@
             <div class="tips-list" id="tipsList"></div>
           </section>
 
-          <section class="samples" aria-label="示例题目">
+          <section class="samples" id="samplesPanel" aria-label="示例题目" hidden>
             <div class="section-title">
               <span>示例</span>
               <span>快速开始</span>
@@ -163,6 +165,9 @@
             </button>
             <button class="tool-button" id="screenshotBtn" type="button" aria-label="导出图片" title="导出图片">
               <i data-lucide="download"></i>
+            </button>
+            <button class="tool-button" id="detailsBtn" type="button" aria-label="解析与元素" title="解析与元素">
+              <i data-lucide="list-tree"></i>
             </button>
           </div>
 

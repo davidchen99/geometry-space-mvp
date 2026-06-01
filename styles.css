@@ -67,7 +67,7 @@ button {
   z-index: 20;
   min-height: var(--topbar-h);
   display: grid;
-  grid-template-columns: minmax(240px, 330px) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(240px, 330px) minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 16px;
   padding: 12px 16px;
@@ -109,7 +109,7 @@ button {
 }
 
 .step-rail {
-  display: flex;
+  display: none;
   justify-content: center;
   gap: 8px;
   min-width: 0;
@@ -184,12 +184,20 @@ button {
   color: var(--accent-strong);
 }
 
+.admin-entry {
+  grid-column: 3;
+}
+
+.user-entry {
+  grid-column: 4;
+}
+
 .workspace {
   position: relative;
   height: calc(100vh - var(--topbar-h));
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) minmax(270px, 320px);
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -236,6 +244,10 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.panel-heading {
+  flex-wrap: wrap;
 }
 
 .panel-heading h2 {
@@ -313,7 +325,7 @@ button {
 
 .primary-actions {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr;
   gap: 9px;
   margin-top: 12px;
 }
@@ -617,7 +629,7 @@ button {
 }
 
 .concept-map {
-  display: flex;
+  display: none;
   align-items: center;
   gap: 7px;
   max-width: 100%;
@@ -757,20 +769,25 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 0 10px;
+  gap: 0;
+  width: 38px;
+  min-height: 38px;
+  padding: 0;
   border-radius: 8px;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink);
-  font-size: 13px;
+  font-size: 0;
   font-weight: 850;
 }
 
 .assist-chip svg {
   width: 16px;
   height: 16px;
+}
+
+.assist-chip span {
+  display: none;
 }
 
 .assist-chip.active,
@@ -887,16 +904,30 @@ button {
 }
 
 .insight-panel {
+  position: absolute;
+  z-index: 12;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(360px, 34vw);
+  min-width: 300px;
   display: flex;
   flex-direction: column;
   gap: 14px;
   padding: 16px;
   border-left: 1px solid var(--line);
+  box-shadow: -16px 0 34px rgba(28, 38, 50, 0.1);
+  transform: translateX(calc(100% + 24px));
+  transition: transform 180ms ease;
   overflow-y: auto;
 }
 
+.app-shell[data-mobile-panel="info"] .insight-panel {
+  transform: translateX(0);
+}
+
 .insight-close-row {
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: space-between;
   min-height: 38px;
@@ -1521,7 +1552,15 @@ button {
   }
 
   .top-bar {
-    grid-template-columns: minmax(220px, 1fr) auto;
+    grid-template-columns: minmax(220px, 1fr) auto auto;
+  }
+
+  .admin-entry {
+    grid-column: 2;
+  }
+
+  .user-entry {
+    grid-column: 3;
   }
 
   .step-rail {

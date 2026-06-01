@@ -93,6 +93,8 @@ const dom = {
   generateBtn: document.querySelector("#generateBtn"),
   completeBtn: document.querySelector("#completeBtn"),
   tipsBtn: document.querySelector("#tipsBtn"),
+  samplesBtn: document.querySelector("#samplesBtn"),
+  samplesPanel: document.querySelector("#samplesPanel"),
   tipsPanel: document.querySelector("#tipsPanel"),
   tipsList: document.querySelector("#tipsList"),
   tipsState: document.querySelector("#tipsState"),
@@ -125,6 +127,7 @@ const dom = {
   auxBtn: document.querySelector("#auxBtn"),
   measureBtn: document.querySelector("#measureBtn"),
   screenshotBtn: document.querySelector("#screenshotBtn"),
+  detailsBtn: document.querySelector("#detailsBtn"),
   sceneWrap: document.querySelector("#sceneWrap"),
   canvas: document.querySelector("#sceneCanvas"),
   labelLayer: document.querySelector("#labelLayer"),
@@ -290,6 +293,7 @@ function initUI() {
   dom.generateBtn.addEventListener("click", () => generateModel());
   dom.completeBtn.addEventListener("click", completeProblemText);
   dom.tipsBtn.addEventListener("click", showInputTips);
+  dom.samplesBtn.addEventListener("click", toggleSamplesPanel);
   dom.clearBtn.addEventListener("click", () => {
     dom.input.value = "";
     dom.input.focus();
@@ -331,6 +335,10 @@ function initUI() {
   });
   dom.measureBtn.addEventListener("click", toggleMeasureMode);
   dom.screenshotBtn.addEventListener("click", exportScreenshot);
+  dom.detailsBtn.addEventListener("click", () => {
+    setMobilePanel(dom.appShell.dataset.mobilePanel === "info" ? "none" : "info");
+    setActiveStep("inspect");
+  });
   dom.viewModeButtons.forEach((button) => {
     button.addEventListener("click", () => setViewMode(button.dataset.viewMode, true));
   });
@@ -451,6 +459,7 @@ function setMobilePanel(panel) {
   dom.mobileTabs.forEach((button) => {
     button.classList.toggle("active", button.dataset.mobilePanel === dom.appShell.dataset.mobilePanel);
   });
+  dom.detailsBtn?.classList.toggle("active", dom.appShell.dataset.mobilePanel === "info");
 }
 
 function closeMobilePanel() {
@@ -1296,6 +1305,15 @@ function renderHelpPanel() {
     .join("");
 }
 
+function toggleSamplesPanel() {
+  dom.samplesPanel.hidden = !dom.samplesPanel.hidden;
+  dom.tipsPanel.hidden = true;
+  hideReviewPanel();
+  setActiveStep("input");
+  setMobilePanel("input");
+  setStatus(dom.samplesPanel.hidden ? "已收起示例" : "已打开示例");
+}
+
 function getHistory() {
   try {
     return JSON.parse(localStorage.getItem(historyKey) || "[]");
@@ -1467,6 +1485,7 @@ function summarizeCurrentModel() {
 async function showInputTips() {
   const text = dom.input.value.trim();
   dom.tipsPanel.hidden = false;
+  dom.samplesPanel.hidden = true;
   setActiveStep("input");
   setMobilePanel("input");
   renderTips(buildLocalTips(text), "常用表达");
@@ -1488,46 +1507,81 @@ async function showInputTips() {
 
 async function completeProblemText() {
   const text = dom.input.value.trim();
-  dom.tipsPanel.hidden = false;
+  const result = organizeProblemText(text);
+  dom.tipsPanel.hidden = true;
+  dom.samplesPanel.hidden = true;
   setActiveStep("input");
   setMobilePanel("input");
-  renderTips(buildLocalTips(text), "可选版本");
-  dom.tipsState.textContent = "正在完善";
-  setStatus("正在帮你补全题目信息...");
-
-  try {
-    const data = await requestBackendTips(text);
-    const tips = Array.isArray(data.tips) && data.tips.length ? data.tips : buildLocalTips(text);
-    const completed = chooseCompletionTip(tips, text);
-    renderTips(tips, data.source === "ai" ? "AI 已完善" : "本地完善");
-    if (completed?.text) {
-      dom.input.value = completed.text;
-      dom.input.focus();
-      updateProblemHints(dom.input.value);
-      syncChoiceQuestion();
-      hideReviewPanel();
-      setStatus("题目信息已补全，请检查修改后再生成");
-    } else {
-      setStatus("没有找到可用的补全文本");
-    }
-  } catch (error) {
-    const tips = buildLocalTips(text);
-    const completed = chooseCompletionTip(tips, text);
-    renderTips(tips, "本地完善");
-    if (completed?.text) {
-      dom.input.value = completed.text;
-      updateProblemHints(dom.input.value);
-      syncChoiceQuestion();
-    }
-    setStatus(`已给出本地补全：${error.message}`);
-  } finally {
-    window.lucide?.createIcons();
+  if (result.text) {
+    dom.input.value = result.text;
+    updateProblemHints(dom.input.value);
+    syncChoiceQuestion();
   }
+  renderCompletionReview(result);
+  dom.input.focus();
+  setStatus(result.missing.length ? "已整理原文，请补齐缺失项后再生成" : "已整理原文，确认后可生成");
+  window.lucide?.createIcons();
 }
 
-function chooseCompletionTip(tips, originalText) {
-  const original = normalizeText(originalText || "");
-  return (tips || []).find((tip) => normalizeText(tip.text || "").length > original.length + 4) || tips?.[0] || null;
+function organizeProblemText(rawText) {
+  const raw = String(rawText || "").trim();
+  const normalized = normalizeText(raw);
+  const shape = normalized.match(/正方体|长方体|正三棱锥|三棱锥|三角锥|四面体|正四棱锥|四棱锥|棱锥|三角形|△|圆|椭圆|双曲线|抛物线|直线|轨迹/)?.[0] || "";
+  const labels = Array.from(new Set(normalized.match(/[A-Z][0-9]?/g) || []));
+  const seenLengths = new Set();
+  const lengthEntries = Array.from(parseLengthMap(normalized).entries())
+    .filter(([key]) => {
+      const endpoints = parseSegmentEndpoints(key);
+      const uniqueKey = endpoints ? segmentKey(endpoints[0], endpoints[1]) : key;
+      if (seenLengths.has(uniqueKey)) return false;
+      seenLengths.add(uniqueKey);
+      return true;
+    })
+    .slice(0, 8);
+  const relations = [];
+  if (/垂直|⊥/.test(normalized)) relations.push("垂直");
+  if (/平行|\/\//.test(normalized)) relations.push("平行");
+  if (/中点/.test(normalized)) relations.push("中点");
+  if (/交点/.test(normalized)) relations.push("交点");
+  if (/连接|连结/.test(normalized)) relations.push("连接线");
+
+  const missing = [];
+  if (!raw) missing.push("请先输入题目原文");
+  if (!shape) missing.push("图形类型");
+  const isPyramidLike = /(三棱锥|三角锥|四面体|棱锥)/.test(shape);
+  if (isPyramidLike && labels.length < 4) missing.push("顶点和底面点名");
+  if (!isPyramidLike && labels.length < 3) missing.push("点名至少 3 个");
+  if (isPyramidLike && !/-|－|—/.test(normalized) && !/(垂直于?|⊥)平面/.test(normalized)) {
+    missing.push("顶点和底面点的对应关系");
+  }
+  if (!lengthEntries.length && !/(边长|棱长|半径|直径|长度|高|高度)/.test(normalized)) missing.push("长度或尺寸条件");
+  if (!relations.length) missing.push("关键关系或需要连接的线段");
+
+  const text = raw ? (/[。.!！?？]$/.test(raw) ? raw : `${raw}。`) : "";
+  return {
+    text,
+    shape: shape || "未识别",
+    labels,
+    lengths: lengthEntries,
+    relations,
+    missing,
+  };
+}
+
+function renderCompletionReview(result) {
+  state.pendingReviewContext = { rawText: result.text, problemText: result.text, completion: true };
+  dom.reviewPanel.hidden = false;
+  dom.reviewState.textContent = result.missing.length ? "待补充" : "可确认";
+  dom.reviewContent.innerHTML = `
+    <div class="review-brief">已按原文整理，不新增题目没有给出的点、长度或关系。</div>
+    <div class="review-grid">
+      <span><strong>图形：</strong>${escapeHtml(result.shape)}</span>
+      <span><strong>点名：</strong>${escapeHtml(result.labels.length ? result.labels.join("、") : "未明确")}</span>
+      <span><strong>长度：</strong>${escapeHtml(result.lengths.length ? result.lengths.map(([key, value]) => `${key}=${formatNumber(value)}`).join("、") : "未明确")}</span>
+      <span><strong>关系：</strong>${escapeHtml(result.relations.length ? result.relations.join("、") : "未明确")}</span>
+    </div>
+    <div class="review-preview">${escapeHtml(result.missing.length ? `需要补充：${result.missing.join("、")}` : "信息基本完整，可以确认生成。")}</div>
+  `;
 }
 
 function buildLocalTips(text) {
@@ -1893,60 +1947,82 @@ function createBaseModel(type, title, description) {
 }
 
 function createCubeModel(text) {
+  const labels = parseBoxNotation(text, "正方体");
+  const [a, b, c, d] = labels.bottom;
+  const [a1, b1, c1, d1] = labels.top;
   const side = parseGlobalLength(text, 2);
   const h = side;
   const model = createBaseModel("cube", "正方体模型", `边长 ${formatNumber(side)}，自动标注 8 个顶点。`);
   const half = side / 2;
 
-  addPoint(model, "A", -half, -half, 0, "顶点");
-  addPoint(model, "B", half, -half, 0, "顶点");
-  addPoint(model, "C", half, half, 0, "顶点");
-  addPoint(model, "D", -half, half, 0, "顶点");
-  addPoint(model, "A1", -half, -half, h, "顶点");
-  addPoint(model, "B1", half, -half, h, "顶点");
-  addPoint(model, "C1", half, half, h, "顶点");
-  addPoint(model, "D1", -half, half, h, "顶点");
+  addPoint(model, a, -half, -half, 0, "底面顶点");
+  addPoint(model, b, half, -half, 0, "底面顶点");
+  addPoint(model, c, half, half, 0, "底面顶点");
+  addPoint(model, d, -half, half, 0, "底面顶点");
+  addPoint(model, a1, -half, -half, h, "上底顶点");
+  addPoint(model, b1, half, -half, h, "上底顶点");
+  addPoint(model, c1, half, half, h, "上底顶点");
+  addPoint(model, d1, -half, half, h, "上底顶点");
 
-  addBoxEdges(model, ["A", "B", "C", "D"], ["A1", "B1", "C1", "D1"]);
-  addFace(model, "平面ABCD", ["A", "B", "C", "D"]);
-  addFace(model, "平面A1B1C1D1", ["A1", "B1", "C1", "D1"]);
-  addFace(model, "平面ABB1A1", ["A", "B", "B1", "A1"]);
-  addFace(model, "平面BCC1B1", ["B", "C", "C1", "B1"]);
-  addFace(model, "平面CDD1C1", ["C", "D", "D1", "C1"]);
-  addFace(model, "平面DAA1D1", ["D", "A", "A1", "D1"]);
+  addBoxEdges(model, labels.bottom, labels.top);
+  addFace(model, `平面${a}${b}${c}${d}`, labels.bottom);
+  addFace(model, `平面${a1}${b1}${c1}${d1}`, labels.top);
+  addFace(model, `平面${a}${b}${b1}${a1}`, [a, b, b1, a1]);
+  addFace(model, `平面${b}${c}${c1}${b1}`, [b, c, c1, b1]);
+  addFace(model, `平面${c}${d}${d1}${c1}`, [c, d, d1, c1]);
+  addFace(model, `平面${d}${a}${a1}${d1}`, [d, a, a1, d1]);
   addRelation(model, `正方体边长 = ${formatNumber(side)}`);
+  addRelation(model, `点位映射：底面 ${labels.bottom.join("、")}；上底 ${labels.top.join("、")}`);
   return model;
 }
 
 function createCuboidModel(text) {
+  const labels = parseBoxNotation(text, "长方体");
+  const [a, b, c, d] = labels.bottom;
+  const [a1, b1, c1, d1] = labels.top;
   const lengths = parseLengthMap(text);
-  const width = getLength(lengths, ["AB", "BA", "A1B1"], 3);
-  const depth = getLength(lengths, ["BC", "CB", "AD", "DA"], 2);
-  const height = getLength(lengths, ["AA1", "A1A", "BB1", "CC1", "DD1"], 2);
-  const model = createBaseModel("cuboid", "长方体模型", `AB=${formatNumber(width)}，BC=${formatNumber(depth)}，AA1=${formatNumber(height)}。`);
+  const width = getLength(lengths, [`${a}${b}`, `${b}${a}`, `${a1}${b1}`, `${b1}${a1}`], 3);
+  const depth = getLength(lengths, [`${b}${c}`, `${c}${b}`, `${a}${d}`, `${d}${a}`], 2);
+  const height = getLength(lengths, [`${a}${a1}`, `${a1}${a}`, `${b}${b1}`, `${c}${c1}`, `${d}${d1}`], 2);
+  const model = createBaseModel("cuboid", "长方体模型", `${a}${b}=${formatNumber(width)}，${b}${c}=${formatNumber(depth)}，${a}${a1}=${formatNumber(height)}。`);
   const x = width / 2;
   const y = depth / 2;
 
-  addPoint(model, "A", -x, -y, 0, "顶点");
-  addPoint(model, "B", x, -y, 0, "顶点");
-  addPoint(model, "C", x, y, 0, "顶点");
-  addPoint(model, "D", -x, y, 0, "顶点");
-  addPoint(model, "A1", -x, -y, height, "顶点");
-  addPoint(model, "B1", x, -y, height, "顶点");
-  addPoint(model, "C1", x, y, height, "顶点");
-  addPoint(model, "D1", -x, y, height, "顶点");
+  addPoint(model, a, -x, -y, 0, "底面顶点");
+  addPoint(model, b, x, -y, 0, "底面顶点");
+  addPoint(model, c, x, y, 0, "底面顶点");
+  addPoint(model, d, -x, y, 0, "底面顶点");
+  addPoint(model, a1, -x, -y, height, "上底顶点");
+  addPoint(model, b1, x, -y, height, "上底顶点");
+  addPoint(model, c1, x, y, height, "上底顶点");
+  addPoint(model, d1, -x, y, height, "上底顶点");
 
-  addBoxEdges(model, ["A", "B", "C", "D"], ["A1", "B1", "C1", "D1"]);
-  addFace(model, "平面ABCD", ["A", "B", "C", "D"]);
-  addFace(model, "平面A1B1C1D1", ["A1", "B1", "C1", "D1"]);
-  addFace(model, "平面ABB1A1", ["A", "B", "B1", "A1"]);
-  addFace(model, "平面BCC1B1", ["B", "C", "C1", "B1"]);
-  addFace(model, "平面CDD1C1", ["C", "D", "D1", "C1"]);
-  addFace(model, "平面DAA1D1", ["D", "A", "A1", "D1"]);
-  addRelation(model, `AB=${formatNumber(width)}`);
-  addRelation(model, `BC=${formatNumber(depth)}`);
-  addRelation(model, `AA1=${formatNumber(height)}`);
+  addBoxEdges(model, labels.bottom, labels.top);
+  addFace(model, `平面${a}${b}${c}${d}`, labels.bottom);
+  addFace(model, `平面${a1}${b1}${c1}${d1}`, labels.top);
+  addFace(model, `平面${a}${b}${b1}${a1}`, [a, b, b1, a1]);
+  addFace(model, `平面${b}${c}${c1}${b1}`, [b, c, c1, b1]);
+  addFace(model, `平面${c}${d}${d1}${c1}`, [c, d, d1, c1]);
+  addFace(model, `平面${d}${a}${a1}${d1}`, [d, a, a1, d1]);
+  addRelation(model, `${a}${b}=${formatNumber(width)}`);
+  addRelation(model, `${b}${c}=${formatNumber(depth)}`);
+  addRelation(model, `${a}${a1}=${formatNumber(height)}`);
+  addRelation(model, `点位映射：底面 ${labels.bottom.join("、")}；上底 ${labels.top.join("、")}`);
   return model;
+}
+
+function parseBoxNotation(text, keyword) {
+  const match = text.match(new RegExp(`${keyword}((?:[A-Z][0-9]?){4})[-－—]((?:[A-Z][0-9]?){4})`));
+  if (match) {
+    return {
+      bottom: splitPointLabels(match[1]).slice(0, 4),
+      top: splitPointLabels(match[2]).slice(0, 4),
+    };
+  }
+  return {
+    bottom: ["A", "B", "C", "D"],
+    top: ["A1", "B1", "C1", "D1"],
+  };
 }
 
 function createGenericPyramidModel(text) {
@@ -1992,7 +2068,8 @@ function createTriPyramidModel(text) {
   addFace(model, `平面${apex}${c}${a}`, [apex, c, a]);
   if (baseData.rightAtB) addRelation(model, `${a}${b} ⟂ ${b}${c}`);
   if (/(正三棱锥|正三角锥|等边三角形|正三角形)/.test(text)) addRelation(model, `底面${a}${b}${c} 为等边三角形`);
-  addRelation(model, foot ? `${apex}${foot} ⟂ 平面${a}${b}${c}` : `${apex} 位于底面${a}${b}${c}上方`);
+  addRelation(model, `点位映射：${apex} 为顶点；${a}、${b}、${c} 为底面顶点`);
+  addRelation(model, foot ? `${formatSegmentFromText(text, apex, foot)} ⟂ 平面${a}${b}${c}` : `${apex} 位于底面${a}${b}${c}上方`);
   return model;
 }
 
@@ -2040,25 +2117,68 @@ function createSquarePyramidModel(text) {
   addFace(model, `平面${apex}${c}${d}`, [apex, c, d]);
   addFace(model, `平面${apex}${d}${a}`, [apex, d, a]);
   addRelation(model, /正四棱锥|正方形/.test(text) ? `底面${a}${b}${c}${d} 为正方形` : `底面${a}${b}${c}${d} 位于 z=0`);
-  addRelation(model, foot ? `${apex}${foot} ⟂ 平面${a}${b}${c}${d}` : `${apex} 位于底面${a}${b}${c}${d}上方`);
+  addRelation(model, `点位映射：${apex} 为顶点；${a}、${b}、${c}、${d} 为底面顶点`);
+  addRelation(model, foot ? `${formatSegmentFromText(text, apex, foot)} ⟂ 平面${a}${b}${c}${d}` : `${apex} 位于底面${a}${b}${c}${d}上方`);
   return model;
 }
 
 function parsePyramidNotation(text, baseCount = 0) {
   const expected = baseCount ? [baseCount] : [4, 3];
   for (const count of expected) {
-    const typed = text.match(new RegExp(`(?:正?${count === 3 ? "三" : "四"}棱锥|${count === 3 ? "三角锥|正三角锥" : "正四棱锥"})([A-Z][0-9]?)[-－—]?((?:[A-Z][0-9]?){${count}})`));
-    if (typed) return { apex: typed[1], base: splitPointLabels(typed[2]).slice(0, count), kind: count === 3 ? "三棱锥" : "四棱锥" };
-    const generic = text.match(new RegExp(`棱锥([A-Z][0-9]?)[-－—]?((?:[A-Z][0-9]?){${count}})`));
-    if (generic) return { apex: generic[1], base: splitPointLabels(generic[2]).slice(0, count), kind: "棱锥" };
+    const shapePattern = count === 3 ? "正?三棱锥|三角锥|正三角锥" : "正?四棱锥";
+    const explicit = text.match(new RegExp(`(?:${shapePattern})([A-Z][0-9]?)[-－—]((?:[A-Z][0-9]?){${count}})`));
+    if (explicit) return { apex: explicit[1], base: splitPointLabels(explicit[2]).slice(0, count), kind: count === 3 ? "三棱锥" : "四棱锥" };
+
+    const genericExplicit = text.match(new RegExp(`棱锥([A-Z][0-9]?)[-－—]((?:[A-Z][0-9]?){${count}})`));
+    if (genericExplicit) return { apex: genericExplicit[1], base: splitPointLabels(genericExplicit[2]).slice(0, count), kind: "棱锥" };
+
+    const compact = text.match(new RegExp(`(?:${shapePattern})((?:[A-Z][0-9]?){${count + 1}})`));
+    if (compact) return compactPyramidMapping(text, splitPointLabels(compact[1]).slice(0, count + 1), count, count === 3 ? "三棱锥" : "四棱锥");
+
+    const genericCompact = text.match(new RegExp(`棱锥((?:[A-Z][0-9]?){${count + 1}})`));
+    if (genericCompact) return compactPyramidMapping(text, splitPointLabels(genericCompact[1]).slice(0, count + 1), count, "棱锥");
+  }
+
+  const tetraExplicit = text.match(/四面体([A-Z][0-9]?)[-－—]((?:[A-Z][0-9]?){3})/);
+  if (tetraExplicit && (!baseCount || baseCount === 3)) {
+    return { apex: tetraExplicit[1], base: splitPointLabels(tetraExplicit[2]).slice(0, 3), kind: "四面体" };
   }
 
   const tetra = text.match(/四面体((?:[A-Z][0-9]?){4})/);
   if (tetra && (!baseCount || baseCount === 3)) {
     const labels = splitPointLabels(tetra[1]).slice(0, 4);
-    return { apex: labels[0], base: labels.slice(1), kind: "四面体" };
+    return compactPyramidMapping(text, labels, 3, "四面体");
   }
   return null;
+}
+
+function compactPyramidMapping(text, labels, baseCount, kind) {
+  const relationMapping = inferPyramidMappingFromRelations(text, labels, baseCount);
+  if (relationMapping) return { ...relationMapping, kind };
+  const apexFirst = /^[PSV]$/.test(labels[0] || "");
+  const apex = apexFirst ? labels[0] : labels[labels.length - 1];
+  const base = apexFirst ? labels.slice(1, baseCount + 1) : labels.slice(0, baseCount);
+  return { apex, base, kind };
+}
+
+function inferPyramidMappingFromRelations(text, labels, baseCount) {
+  const labelSet = new Set(labels);
+  const linePlaneRegex = /([A-Z][0-9]?[A-Z][0-9]?)(?:垂直于?|⊥)平面([A-Z0-9]+)/g;
+  for (const match of text.matchAll(linePlaneRegex)) {
+    const endpoints = parseSegmentEndpoints(match[1]);
+    const planeLabels = splitPointLabels(match[2]).filter((label) => labelSet.has(label));
+    if (!endpoints || planeLabels.length < baseCount) continue;
+    const apex = endpoints.find((label) => labelSet.has(label) && !planeLabels.includes(label));
+    if (!apex) continue;
+    const base = labels.filter((label) => label !== apex && planeLabels.includes(label)).slice(0, baseCount);
+    if (base.length === baseCount) return { apex, base };
+  }
+  return null;
+}
+
+function formatSegmentFromText(text, first, second) {
+  if (text.includes(`${second}${first}`)) return `${second}${first}`;
+  return `${first}${second}`;
 }
 
 function splitPointLabels(value) {
