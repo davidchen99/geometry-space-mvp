@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="几何空间">
+  <rect width="512" height="512" rx="96" fill="#0f8f8c"/>
+  <path d="M128 356V178l128-74 128 74v178l-128 74-128-74Z" fill="#f7f3ec" opacity=".96"/>
+  <path d="M128 178l128 74 128-74M256 252v178M128 356l128-104 128 104" fill="none" stroke="#2266d1" stroke-width="24" stroke-linejoin="round"/>
+  <circle cx="128" cy="178" r="20" fill="#d9564a"/>
+  <circle cx="256" cy="104" r="20" fill="#d9564a"/>
+  <circle cx="384" cy="178" r="20" fill="#d9564a"/>
+  <circle cx="256" cy="252" r="22" fill="#ffb84d"/>
+  <text x="256" y="318" text-anchor="middle" font-family="Arial, 'Microsoft YaHei', sans-serif" font-size="98" font-weight="800" fill="#0d2b2f">几</text>
+</svg>

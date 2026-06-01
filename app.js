@@ -320,7 +320,17 @@ init();
 function init() {
   initScene();
   initUI();
+  registerServiceWorker();
   animate();
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {
+      // PWA registration is optional; the app should still run normally without it.
+    });
+  });
 }
 
 function initUI() {
@@ -2620,7 +2630,7 @@ function createRegularTetrahedronModel(text) {
 
 function isCompositeGeometryText(text) {
   if (!/(正方体|长方体)/.test(text)) return false;
-  return /(圆柱|球|圆形|截面圆|多个圆|两个圆|圆[A-Z][0-9]?|相交|穿过|截)/.test(text);
+  return /(圆柱|球|圆形|截面圆|多个圆|两个圆|圆[A-Z][0-9]?|三棱锥|三角锥|四棱锥|棱锥|四面体|多面体|相交|穿过|贯穿|截)/.test(text);
 }
 
 function createCompositeGeometryModel(text) {
@@ -2628,9 +2638,10 @@ function createCompositeGeometryModel(text) {
   const bounds = computeBounds(model);
   model.type = "composite";
   model.title = "组合几何模型";
-  model.description = `${model.description} 已在同一坐标系中叠加圆形、圆柱或截面关系。`;
+  model.description = `${model.description} 已在同一坐标系中叠加其它形体并标出相交或截面部分。`;
   addRelation(model, "组合模型：所有形体共用同一三维坐标系。");
 
+  addCompositePolyhedra(model, text, bounds);
   const hasCylinder = /圆柱/.test(text) || /穿过|贯穿/.test(text);
   const hasSphere = /球/.test(text) && !/椭球/.test(text);
   if (hasCylinder) addCompositeCylinder(model, text, bounds);
@@ -2641,6 +2652,91 @@ function createCompositeGeometryModel(text) {
     addRelation(model, "相交或截面部分已用加粗曲线标出，半透明面表示对应圆面或曲面。");
   }
   return model;
+}
+
+function addCompositePolyhedra(model, text, bounds) {
+  if (/四棱锥/.test(text)) {
+    addCompositeSquarePyramid(model, text, bounds);
+    return;
+  }
+  if (/三棱锥|三角锥|四面体|棱锥|多面体/.test(text)) {
+    addCompositeTriPyramid(model, text, bounds);
+  }
+}
+
+function addCompositeTriPyramid(model, text, bounds) {
+  const parsed = parsePyramidNotation(text, 3);
+  const preferred = parsed ? [parsed.apex, ...parsed.base] : ["P", "E", "F", "G"];
+  const [apex, a, b, c] = allocateCompositeLabels(model, preferred, ["P", "E", "F", "G"]);
+  const width = Math.max(Math.min(bounds.size.x, bounds.size.y) * 0.68, 1.2);
+  const baseZ = bounds.min.z + bounds.size.z * 0.42;
+  const apexZ = bounds.min.z + bounds.size.z * 0.95;
+  const baseCenter = { x: 0, y: 0, z: baseZ };
+  const points = {
+    [a]: { x: -width / 2, y: -width * 0.28, z: baseZ },
+    [b]: { x: width / 2, y: -width * 0.28, z: baseZ },
+    [c]: { x: 0, y: width * 0.55, z: baseZ },
+    [apex]: { x: 0, y: 0, z: apexZ },
+  };
+
+  Object.entries(points).forEach(([label, point]) => addPoint(model, label, point.x, point.y, point.z, label === apex ? "组合三棱锥顶点" : "组合三棱锥底面顶点"));
+  [[a, b], [b, c], [c, a], [apex, a], [apex, b], [apex, c]].forEach(([from, to]) => addSegment(model, from, to, "edge", "组合三棱锥棱"));
+  addFace(model, `组合平面${a}${b}${c}`, [a, b, c]);
+  addFace(model, `组合平面${apex}${a}${b}`, [apex, a, b]);
+  addFace(model, `组合平面${apex}${b}${c}`, [apex, b, c]);
+  addFace(model, `组合平面${apex}${c}${a}`, [apex, c, a]);
+  addSurface(model, "长方体与三棱锥相交高亮区", {
+    vertices: [points[a], points[b], points[c]].map((point) => ({ ...point, z: point.z + 0.012 })),
+    indices: [0, 1, 2],
+  }, "用高亮三角形表示两个多面体的相交截面", { color: 0xff4f7b, opacity: 0.58 });
+  addCurve(model, "三棱锥相交边界", [points[a], points[b], points[c], points[a]].map((point) => ({ ...point, z: point.z + 0.018 })), "相交区域边界");
+  addRelation(model, `组合三棱锥 ${displayLabelText(apex)}-${displayLabelText(a)}${displayLabelText(b)}${displayLabelText(c)} 已完整显示点、棱和面。`);
+  addRelation(model, "粉色高亮面表示长方体与三棱锥的相交参考区域。");
+}
+
+function addCompositeSquarePyramid(model, text, bounds) {
+  const parsed = parsePyramidNotation(text, 4);
+  const preferred = parsed ? [parsed.apex, ...parsed.base] : ["P", "E", "F", "G", "H"];
+  const [apex, a, b, c, d] = allocateCompositeLabels(model, preferred, ["P", "E", "F", "G", "H"]);
+  const width = Math.max(Math.min(bounds.size.x, bounds.size.y) * 0.64, 1.2);
+  const baseZ = bounds.min.z + bounds.size.z * 0.38;
+  const apexZ = bounds.min.z + bounds.size.z * 0.96;
+  const half = width / 2;
+  const points = {
+    [a]: { x: -half, y: -half, z: baseZ },
+    [b]: { x: half, y: -half, z: baseZ },
+    [c]: { x: half, y: half, z: baseZ },
+    [d]: { x: -half, y: half, z: baseZ },
+    [apex]: { x: 0, y: 0, z: apexZ },
+  };
+
+  Object.entries(points).forEach(([label, point]) => addPoint(model, label, point.x, point.y, point.z, label === apex ? "组合四棱锥顶点" : "组合四棱锥底面顶点"));
+  [[a, b], [b, c], [c, d], [d, a], [apex, a], [apex, b], [apex, c], [apex, d]].forEach(([from, to]) => addSegment(model, from, to, "edge", "组合四棱锥棱"));
+  addFace(model, `组合平面${a}${b}${c}${d}`, [a, b, c, d]);
+  addFace(model, `组合平面${apex}${a}${b}`, [apex, a, b]);
+  addFace(model, `组合平面${apex}${b}${c}`, [apex, b, c]);
+  addFace(model, `组合平面${apex}${c}${d}`, [apex, c, d]);
+  addFace(model, `组合平面${apex}${d}${a}`, [apex, d, a]);
+  addSurface(model, "长方体与四棱锥相交高亮区", {
+    vertices: [points[a], points[b], points[c], points[d]].map((point) => ({ ...point, z: point.z + 0.012 })),
+    indices: [0, 1, 2, 0, 2, 3],
+  }, "用高亮四边形表示两个多面体的相交截面", { color: 0xff4f7b, opacity: 0.58 });
+  addCurve(model, "四棱锥相交边界", [points[a], points[b], points[c], points[d], points[a]].map((point) => ({ ...point, z: point.z + 0.018 })), "相交区域边界");
+  addRelation(model, `组合四棱锥 ${displayLabelText(apex)}-${displayLabelText(a)}${displayLabelText(b)}${displayLabelText(c)}${displayLabelText(d)} 已完整显示点、棱和面。`);
+  addRelation(model, "粉色高亮面表示长方体与四棱锥的相交参考区域。");
+}
+
+function allocateCompositeLabels(model, preferred, fallback) {
+  const used = new Set(Object.keys(model.points || {}));
+  const allocated = [];
+  const source = preferred.length === fallback.length ? preferred : fallback;
+  source.forEach((label, index) => {
+    const fallbackLabel = fallback[index] || label || `P${index + 1}`;
+    const candidate = label && !used.has(label) && !allocated.includes(label) ? label : uniquePointLabel({ points: Object.fromEntries([...used, ...allocated].map((item) => [item, true])) }, fallbackLabel);
+    allocated.push(candidate);
+    used.add(candidate);
+  });
+  return allocated;
 }
 
 function addCompositeCylinder(model, text, bounds) {
@@ -3065,7 +3161,7 @@ function addCurve(model, label, points, note = "") {
   });
 }
 
-function addSurface(model, label, surfaceData, note = "") {
+function addSurface(model, label, surfaceData, note = "", options = {}) {
   if (!surfaceData?.vertices?.length || !surfaceData?.indices?.length) return;
   model.surfaces.push({
     id: `surface:${label}`,
@@ -3073,6 +3169,8 @@ function addSurface(model, label, surfaceData, note = "") {
     vertices: surfaceData.vertices,
     indices: surfaceData.indices,
     note,
+    color: options.color,
+    opacity: options.opacity,
   });
 }
 
@@ -3753,9 +3851,9 @@ function renderSurface(model, surface, index) {
   geometry.computeVertexNormals();
 
   const material = new THREE.MeshStandardMaterial({
-    color: colors.surface[index % colors.surface.length],
+    color: surface.color || colors.surface[index % colors.surface.length],
     transparent: true,
-    opacity: 0.28,
+    opacity: surface.opacity ?? 0.28,
     side: THREE.DoubleSide,
     roughness: 0.68,
     metalness: 0,
