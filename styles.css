@@ -1597,7 +1597,7 @@ button {
   .app-shell {
     height: 100dvh;
     min-height: 100dvh;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
     overflow: hidden;
   }
 
@@ -1669,9 +1669,11 @@ button {
 
   .workspace {
     position: relative;
-    display: block;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     min-height: 0;
-    height: calc(100dvh - var(--topbar-h) - 32px);
+    height: calc(100dvh - var(--topbar-h));
     overflow: hidden;
   }
 
@@ -1735,7 +1737,7 @@ button {
   .viewer-status {
     left: 10px;
     right: 10px;
-    bottom: 72px;
+    bottom: 10px;
     max-width: none;
     font-size: 12px;
   }
@@ -1743,20 +1745,13 @@ button {
   .element-toast {
     left: 10px;
     right: 58px;
-    bottom: 126px;
+    bottom: 64px;
     width: auto;
     padding: 9px;
   }
 
   .assist-dock {
-    left: auto;
-    right: 10px;
-    bottom: 72px;
-    flex-direction: column;
-    justify-content: flex-end;
-    gap: 6px;
-    padding: 6px;
-    overflow: visible;
+    display: none;
   }
 
   .assist-chip {
@@ -1770,14 +1765,27 @@ button {
     display: none;
   }
 
-  .input-panel,
+  .input-panel {
+    position: relative;
+    z-index: 8;
+    display: flex;
+    width: auto;
+    max-height: min(42dvh, 330px);
+    padding: 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    box-shadow: 0 12px 30px rgba(15, 24, 34, 0.1);
+    transform: none;
+    overflow-y: auto;
+  }
+
   .insight-panel {
     position: fixed;
     z-index: 25;
     top: auto;
     left: 10px;
     right: 10px;
-    bottom: 70px;
+    bottom: 10px;
     width: auto;
     min-width: 0;
     max-height: min(62dvh, 560px);
@@ -1790,7 +1798,6 @@ button {
     overflow-y: auto;
   }
 
-  .app-shell[data-mobile-panel="input"] .input-panel,
   .app-shell[data-mobile-panel="info"] .insight-panel {
     transform: translateY(0);
   }
@@ -1799,20 +1806,20 @@ button {
     display: none;
   }
 
-  .app-shell:not([data-mobile-panel="none"]) .assist-dock {
+  .app-shell[data-mobile-panel="info"] .assist-dock {
     display: none;
   }
 
   .primary-actions {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   #selectAllBtn {
-    display: none;
+    display: inline-grid;
   }
 
   #problemInput {
-    min-height: 112px;
+    min-height: 96px;
     margin-top: 9px;
     line-height: 1.55;
   }
@@ -1887,22 +1894,11 @@ button {
   }
 
   .mobile-nav {
-    position: fixed;
-    z-index: 30;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
-    border-top: 1px solid var(--line);
-    background: rgba(255, 255, 255, 0.94);
-    backdrop-filter: blur(16px);
+    display: none;
   }
 
   .contact-footer {
-    margin-bottom: calc(60px + env(safe-area-inset-bottom));
+    display: none;
   }
 
   .mobile-tab {
@@ -1926,7 +1922,7 @@ button {
   .assist-drawer {
     left: 10px;
     right: 10px;
-    bottom: 70px;
+    bottom: 10px;
     width: auto;
     max-height: min(58dvh, 540px);
   }
